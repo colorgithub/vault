@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { IconKey, IconQr, IconRefresh, IconSparkle } from "@/components/Icons";
+import { IconRefresh, IconSparkle } from "@/components/Icons";
 import { Modal } from "@/components/Modal";
 import { QrScanner } from "@/components/QrScanner";
 import { toast } from "@/components/Toast";
@@ -33,7 +33,7 @@ export function AddAccountDialog({
 }) {
   const [tab, setTab] = useState<Tab>("scan");
 
-  // 扫码结果预览
+  // 图片识别结果预览
   const [scannedRaw, setScannedRaw] = useState<string | null>(null);
   const [parsed, setParsed] = useState<ParsedOtpAccount[]>([]);
 
@@ -126,28 +126,27 @@ export function AddAccountDialog({
       onClose={close}
       size="lg"
       title="添加 2FA 账户"
-      description="扫描二维码自动识别，或手动输入密钥"
+      description="粘贴截图、截取屏幕或手动输入密钥"
     >
       {/* 切换标签 */}
-      <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+      <div className="mb-5 flex gap-5 border-b border-slate-200 dark:border-slate-800">
         {(
           [
-            { key: "scan", label: "扫码导入", icon: IconQr },
-            { key: "manual", label: "手动输入", icon: IconKey },
+            { key: "scan", label: "图片识别" },
+            { key: "manual", label: "手动输入" },
           ] as const
-        ).map(({ key, label, icon: Icon }) => (
+        ).map(({ key, label }) => (
           <button
             key={key}
             type="button"
             onClick={() => setTab(key)}
             className={cn(
-              "flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition",
+              "-mb-px border-b-2 pb-2 text-sm transition",
               tab === key
-                ? "bg-white text-brand-700 shadow-sm dark:bg-slate-900 dark:text-brand-300"
-                : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200",
+                ? "border-slate-900 text-slate-900 dark:border-slate-100 dark:text-slate-100"
+                : "border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300",
             )}
           >
-            <Icon className="size-4" />
             {label}
           </button>
         ))}
@@ -169,24 +168,24 @@ export function AddAccountDialog({
                 className="btn-ghost px-2.5 py-1.5 text-xs"
               >
                 <IconRefresh className="size-4" />
-                重新扫描
+                重新选择
               </button>
             </div>
 
-            <ul className="max-h-64 space-y-2 overflow-y-auto">
+            <ul className="max-h-64 overflow-y-auto">
               {parsed.map((item, index) => (
                 <li
                   key={`${item.secret}-${index}`}
-                  className="flex items-center gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-800"
+                  className="flex items-center gap-3 border-b border-slate-100 py-2.5 last:border-0 dark:border-slate-800/60"
                 >
-                  <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-brand-50 text-xs font-semibold text-brand-600 dark:bg-brand-950/60 dark:text-brand-300">
+                  <span className="w-4 shrink-0 text-xs tabular-nums text-slate-400 dark:text-slate-500">
                     {index + 1}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">
+                    <p className="truncate text-sm">
                       {item.issuer || "未命名服务"}
                     </p>
-                    <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+                    <p className="truncate text-xs text-slate-400 dark:text-slate-500">
                       {item.accountName} · {item.algorithm} · {item.digits} 位 ·{" "}
                       {item.period}s
                     </p>
@@ -244,7 +243,7 @@ export function AddAccountDialog({
               <button
                 type="button"
                 onClick={() => setSecret(generateSecret())}
-                className="inline-flex items-center gap-1 text-xs font-normal text-brand-600 hover:underline dark:text-brand-400"
+                className="inline-flex items-center gap-1 text-xs font-normal text-slate-600 hover:underline dark:text-slate-300"
               >
                 <IconSparkle className="size-3.5" />
                 随机生成
@@ -280,7 +279,7 @@ export function AddAccountDialog({
           <button
             type="button"
             onClick={() => setAdvanced((v) => !v)}
-            className="text-xs font-medium text-brand-600 hover:underline dark:text-brand-400"
+            className="text-xs font-medium text-slate-600 hover:underline dark:text-slate-300"
           >
             {advanced ? "收起高级设置" : "展开高级设置（算法 / 位数 / 周期）"}
           </button>

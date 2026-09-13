@@ -205,3 +205,18 @@ export const IconSparkle = (p: IconProps) => (
     <path d="M18.5 15.5l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7.7-1.9Z" />
   </Base>
 );
+
+export const IconClipboard = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M9 4.5h6M9 4.5a1.5 1.5 0 0 0-1.5 1.5v.5h9V6A1.5 1.5 0 0 0 15 4.5" />
+    <path d="M7.5 6.5H6.8A1.8 1.8 0 0 0 5 8.3v10.4a1.8 1.8 0 0 0 1.8 1.8h10.4a1.8 1.8 0 0 0 1.8-1.8V8.3a1.8 1.8 0 0 0-1.8-1.8h-.7" />
+  </Base>
+);
+
+export const IconScreen = (p: IconProps) => (
+  <Base {...p}>
+    <rect x="3" y="4.5" width="18" height="12" rx="2" />
+    <path d="M9 20h6M12 16.5V20" />
+    <circle cx="12" cy="10.5" r="2" />
+  </Base>
+);

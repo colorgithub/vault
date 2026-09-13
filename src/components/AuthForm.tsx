@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { IconEye, IconEyeOff, IconLock, IconMail, IconUser } from "@/components/Icons";
+import { IconEye, IconEyeOff } from "@/components/Icons";
 import { apiFetch } from "@/lib/client";
 
 export function AuthForm({ mode }: { mode: "login" | "register" }) {
@@ -39,50 +39,43 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
     <form onSubmit={onSubmit} className="space-y-4">
       {isRegister && (
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+          <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
             昵称
           </span>
-          <div className="relative">
-            <IconUser className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              className="field pl-11"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="怎么称呼你？"
-              autoComplete="nickname"
-              maxLength={40}
-              required
-            />
-          </div>
+          <input
+            className="field"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="怎么称呼你"
+            autoComplete="nickname"
+            maxLength={40}
+            required
+          />
         </label>
       )}
 
       <label className="block">
-        <span className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+        <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
           邮箱
         </span>
-        <div className="relative">
-          <IconMail className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            className="field pl-11"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            autoComplete="email"
-            required
-          />
-        </div>
+        <input
+          className="field"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="you@example.com"
+          autoComplete="email"
+          required
+        />
       </label>
 
       <label className="block">
-        <span className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+        <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-slate-400">
           密码
         </span>
         <div className="relative">
-          <IconLock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
-            className="field px-11"
+            className="field pr-10"
             type={showPassword ? "text" : "password"}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -94,10 +87,14 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           <button
             type="button"
             onClick={() => setShowPassword((v) => !v)}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-400 transition hover:text-slate-600 dark:hover:text-slate-200"
             aria-label={showPassword ? "隐藏密码" : "显示密码"}
           >
-            {showPassword ? <IconEyeOff /> : <IconEye />}
+            {showPassword ? (
+              <IconEyeOff className="size-4" />
+            ) : (
+              <IconEye className="size-4" />
+            )}
           </button>
         </div>
       </label>
@@ -105,32 +102,27 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       {error && (
         <p
           role="alert"
-          className="animate-pop rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300"
+          className="animate-pop rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-600 dark:bg-rose-950/40 dark:text-rose-400"
         >
           {error}
         </p>
       )}
 
-      <button type="submit" className="btn-primary w-full py-3" disabled={loading}>
-        {loading ? (
-          <>
-            <span className="size-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-            处理中…
-          </>
-        ) : isRegister ? (
-          "创建账号"
-        ) : (
-          "登录"
-        )}
+      <button
+        type="submit"
+        className="btn-primary w-full py-2.5"
+        disabled={loading}
+      >
+        {loading ? "处理中…" : isRegister ? "创建账号" : "登录"}
       </button>
 
-      <p className="pt-1 text-center text-sm text-slate-500 dark:text-slate-400">
-        {isRegister ? "已经有账号了？" : "还没有账号？"}
+      <p className="pt-1 text-center text-xs text-slate-500 dark:text-slate-400">
+        {isRegister ? "已有账号？" : "还没有账号？"}
         <Link
           href={isRegister ? "/login" : "/register"}
-          className="ml-1 font-medium text-brand-600 hover:underline dark:text-brand-400"
+          className="ml-1 underline underline-offset-2 transition hover:text-slate-900 dark:hover:text-slate-100"
         >
-          {isRegister ? "去登录" : "免费注册"}
+          {isRegister ? "去登录" : "注册"}
         </Link>
       </p>
     </form>

@@ -10,20 +10,21 @@
 
 ### 1. 备忘录：新建 / 保存 / 修改
 - 新建、编辑、删除、置顶，7 种颜色标签
-- **输入即自动保存**（700ms 防抖），右上角实时显示「保存中 / 已自动保存」
+- **输入即自动保存**（700ms 防抖），右上角实时显示「保存中 / 已保存」
 - 全文搜索（标题 + 内容）
 - 支持 **Markdown 预览**，渲染结果经 DOMPurify 消毒，防 XSS
 - 切换标签页 / 关闭页面时自动补存未落盘的改动
 - 移动端两栏自适应：列表 ⇄ 编辑页
 
-### 2. 2FA 验证码：实时显示 + 扫码新建
+### 2. 2FA 验证码：实时显示 + 图片识别新建
 - **纯 Web Crypto 实现的 TOTP**（RFC 6238），代码在浏览器本地计算，服务端不参与算码
-- 每秒刷新，环形/条形进度条 + 剩余秒数，最后 5 秒变红
+- 每秒刷新，极细进度条 + 剩余秒数，最后 5 秒转为红色
 - 点击验证码一键复制
-- **二维码扫描**：
-  - 摄像头实时识别（`jsQR`）
-  - 也支持**上传二维码截图**识别（桌面端无摄像头也能用）
-  - 支持 `otpauth://totp/...` 标准链接
+- **二维码识别（不使用摄像头）**，三种方式任选：
+  - **粘贴图片**：按 `Ctrl/⌘ + V` 直接粘贴截图，或点「粘贴图片」从系统剪贴板读取
+  - **截取屏幕**：通过 `getDisplayMedia` 共享屏幕/窗口/标签页，实时扫描屏幕上的二维码
+  - **选择 / 拖拽图片**：本地图片文件或直接拖进虚线框
+  - 支持 `otpauth://totp/...` 标准链接，也接受直接粘贴链接文本
   - **支持 Google Authenticator 的 `otpauth-migration://` 批量导出码**，一次导入多个账户
 - 手动录入，带高级设置（算法 SHA1/SHA256/SHA512、位数、周期），可随机生成密钥
 - 显示等价的 `otpauth://` 链接，方便迁移到其它验证器
@@ -35,7 +36,8 @@
 - **多账号数据严格隔离**：所有数据库查询都带 `user_id` 条件，跨账号访问一律 404
 - 登录接口对不存在的邮箱也执行一次哈希运算，避免通过响应时间枚举账号
 
-### 4. 其它
+### 4. 界面与其它
+- **克制的单色设计**：无渐变、无光晕、无毛玻璃，只有一个强调色用于焦点与选中态
 - 深色 / 浅色主题，跟随系统并可手动切换（无闪白）
 - 一键导出 JSON 备份
 - Toast 通知、空状态、加载态、响应式布局
@@ -226,7 +228,7 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5432/memovault"
 { "issuer": "GitHub", "accountName": "me@example.com",
   "secret": "JBSWY3DPEHPK3PXP", "algorithm": "SHA1", "digits": 6, "period": 30 }
 
-// 2. 扫码后传原始链接（支持 otpauth-migration 批量）
+// 2. 图片识别后传原始链接（支持 otpauth-migration 批量）
 { "uri": "otpauth://totp/GitHub:me@example.com?secret=...&issuer=GitHub" }
 
 // 3. 直接批量
@@ -255,9 +257,9 @@ src/
 │   ├── MemoWorkspace.tsx       # 备忘录列表 + 编辑器（自动保存）
 │   ├── TotpWorkspace.tsx       # 验证器网格
 │   ├── TotpCard.tsx            # 单张验证码卡片（实时刷新）
-│   ├── AddAccountDialog.tsx    # 添加账户（扫码 / 手动）
+│   ├── AddAccountDialog.tsx    # 添加账户（图片识别 / 手动）
 │   ├── EditAccountDialog.tsx   # 编辑账户
-│   ├── QrScanner.tsx           # 摄像头 / 图片二维码识别
+│   ├── QrScanner.tsx           # 二维码识别（粘贴 / 屏幕捕获 / 图片）
 │   ├── AuthForm.tsx AuthShell.tsx Modal.tsx Toast.tsx Icons.tsx
 └── lib/
     ├── auth.ts                 # PBKDF2 哈希 + JWT 会话
@@ -281,7 +283,7 @@ src/
 - 会话 Cookie 为 `httpOnly` + `sameSite=lax`，生产环境自动带 `secure`
 - Markdown 预览经 DOMPurify 消毒
 - 响应头附带 `X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff` 等
-- 摄像头权限通过 `Permissions-Policy` 限定为同源
+- **完全不请求摄像头权限**：响应头里 `camera=()` 直接禁用，代码中也没有任何 `getUserMedia` 调用；屏幕捕获用 `display-capture=(self)` 限定同源
 
 > ⚠️ **TOTP 密钥以可逆形式存储**：因为需要在浏览器本地实时计算验证码，服务端必须能把密钥下发给已登录的用户。这是所有自建验证器的共同取舍 —— 请务必使用可信的数据库服务商，并保管好 `DATABASE_URL`。
 

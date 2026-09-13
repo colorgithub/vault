@@ -168,7 +168,7 @@ export function EditAccountDialog({
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
-              className="size-4 rounded border-slate-300 accent-brand-600"
+              className="size-4 rounded border-slate-300 accent-slate-900"
               checked={changeSecret}
               onChange={(e) => setChangeSecret(e.target.checked)}
             />

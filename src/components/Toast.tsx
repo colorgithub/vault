@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 
-import { IconCheck, IconClose } from "@/components/Icons";
 import { cn } from "@/lib/client";
 
 export interface ToastItem {
@@ -43,27 +42,13 @@ export function Toaster() {
           key={item.id}
           role="status"
           className={cn(
-            "animate-slide-up pointer-events-auto flex max-w-[min(28rem,100%)] items-center gap-2.5 rounded-2xl px-4 py-2.5 text-sm font-medium shadow-lg ring-1 backdrop-blur",
+            "animate-slide-up pointer-events-auto max-w-[min(26rem,100%)] rounded-lg px-3.5 py-2 text-xs shadow-lg",
             item.type === "error"
-              ? "bg-rose-600/95 text-white ring-rose-500/40"
-              : item.type === "info"
-                ? "bg-slate-900/92 text-white ring-white/10"
-                : "bg-slate-900/92 text-white ring-white/10",
+              ? "bg-rose-600 text-white"
+              : "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900",
           )}
         >
-          <span
-            className={cn(
-              "grid size-5 shrink-0 place-items-center rounded-full",
-              item.type === "error" ? "bg-white/20" : "bg-emerald-500",
-            )}
-          >
-            {item.type === "error" ? (
-              <IconClose className="size-3.5" />
-            ) : (
-              <IconCheck className="size-3.5" />
-            )}
-          </span>
-          <span className="min-w-0 break-words">{item.message}</span>
+          <span className="break-words">{item.message}</span>
         </div>
       ))}
     </div>

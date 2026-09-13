@@ -9,20 +9,19 @@
   --font-mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono",
     Menlo, Consolas, "Liberation Mono", monospace;
 
-  --color-brand-50: oklch(0.97 0.014 285);
-  --color-brand-100: oklch(0.94 0.032 285);
-  --color-brand-200: oklch(0.89 0.06 285);
-  --color-brand-300: oklch(0.81 0.1 285);
-  --color-brand-400: oklch(0.71 0.15 285);
-  --color-brand-500: oklch(0.62 0.19 285);
-  --color-brand-600: oklch(0.55 0.21 285);
-  --color-brand-700: oklch(0.48 0.19 285);
-  --color-brand-800: oklch(0.4 0.15 285);
-  --color-brand-900: oklch(0.34 0.11 285);
+  /* 只保留一个克制的强调色，用于焦点、选中态与进度条 */
+  --color-accent-50: oklch(0.97 0.014 285);
+  --color-accent-100: oklch(0.94 0.032 285);
+  --color-accent-200: oklch(0.89 0.06 285);
+  --color-accent-300: oklch(0.81 0.1 285);
+  --color-accent-400: oklch(0.71 0.15 285);
+  --color-accent-500: oklch(0.62 0.19 285);
+  --color-accent-600: oklch(0.55 0.21 285);
+  --color-accent-700: oklch(0.48 0.19 285);
 
-  --animate-fade-in: fade-in 0.25s ease-out both;
-  --animate-slide-up: slide-up 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
-  --animate-pop: pop 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-fade-in: fade-in 0.18s ease-out both;
+  --animate-slide-up: slide-up 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-pop: pop 0.15s ease-out both;
 }
 
 @keyframes fade-in {
@@ -37,7 +36,7 @@
 @keyframes slide-up {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -48,11 +47,9 @@
 @keyframes pop {
   from {
     opacity: 0;
-    transform: scale(0.96);
   }
   to {
     opacity: 1;
-    transform: scale(1);
   }
 }
 
@@ -72,7 +69,6 @@
 
   html {
     color-scheme: light;
-    scroll-behavior: smooth;
   }
 
   html.dark {
@@ -80,17 +76,17 @@
   }
 
   body {
-    @apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
+    @apply bg-white text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
     font-family: var(--font-sans);
     text-rendering: optimizeLegibility;
   }
 
   ::selection {
-    @apply bg-brand-500/25;
+    @apply bg-slate-900/10 dark:bg-white/20;
   }
 
   :focus-visible {
-    @apply outline-2 outline-offset-2 outline-brand-500;
+    @apply outline-2 outline-offset-2 outline-accent-500;
   }
 
   input,
@@ -102,20 +98,17 @@
 }
 
 @layer components {
-  .glass {
-    @apply bg-white/75 backdrop-blur-xl dark:bg-slate-900/70;
-  }
-
   .card {
-    @apply rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900;
+    @apply rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900;
   }
 
   .field {
-    @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition
+    @apply w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition
       placeholder:text-slate-400
-      focus:border-brand-400 focus:ring-4 focus:ring-brand-500/10
-      disabled:cursor-not-allowed disabled:opacity-60
-      dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500;
+      focus:border-slate-400 focus:ring-2 focus:ring-slate-900/5
+      disabled:cursor-not-allowed disabled:opacity-50
+      dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-600
+      dark:focus:border-slate-600 dark:focus:ring-white/10;
   }
 
   .btn,
@@ -123,55 +116,56 @@
   .btn-ghost,
   .btn-outline,
   .btn-danger {
-    @apply inline-flex select-none items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium
-      transition active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex select-none items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium
+      transition disabled:pointer-events-none disabled:opacity-45;
   }
 
+  /* 主按钮走单色，不用品牌色，视觉上最安静 */
   .btn-primary {
-    @apply bg-brand-600 text-white shadow-sm shadow-brand-600/25 hover:bg-brand-700;
+    @apply bg-slate-900 text-white hover:bg-slate-700
+      dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200;
   }
 
   .btn-ghost {
-    @apply text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800;
+    @apply text-slate-500 hover:bg-slate-100 hover:text-slate-900
+      dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100;
   }
 
   .btn-outline {
-    @apply border border-slate-200 bg-white text-slate-700 hover:bg-slate-50
-      dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800;
+    @apply border border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50
+      dark:border-slate-800 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-900;
   }
 
   .btn-danger {
-    @apply text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40;
+    @apply text-slate-500 hover:bg-rose-50 hover:text-rose-600
+      dark:text-slate-400 dark:hover:bg-rose-950/40 dark:hover:text-rose-400;
   }
 }
 
 @layer utilities {
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: rgb(148 163 184 / 0.45) transparent;
+    scrollbar-color: rgb(148 163 184 / 0.35) transparent;
   }
   .scrollbar-thin::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
   }
   .scrollbar-thin::-webkit-scrollbar-track {
     background: transparent;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: rgb(148 163 184 / 0.4);
+    background-color: rgb(148 163 184 / 0.35);
     border-radius: 9999px;
-    border: 2px solid transparent;
-    background-clip: content-box;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background-color: rgb(148 163 184 / 0.65);
-    background-clip: content-box;
+    background-color: rgb(148 163 184 / 0.6);
   }
 
   .code-text {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.05em;
   }
 }
 
@@ -180,10 +174,10 @@
   @apply text-slate-700 dark:text-slate-300;
 }
 .prose-memo h1 {
-  @apply mt-6 mb-3 text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-50;
+  @apply mt-6 mb-3 text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-50;
 }
 .prose-memo h2 {
-  @apply mt-6 mb-2.5 text-xl font-semibold tracking-tight text-slate-900 dark:text-slate-50;
+  @apply mt-6 mb-2.5 text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50;
 }
 .prose-memo h3 {
   @apply mt-5 mb-2 text-base font-semibold text-slate-900 dark:text-slate-50;
@@ -192,7 +186,7 @@
   @apply my-2.5 leading-7;
 }
 .prose-memo a {
-  @apply text-brand-600 underline underline-offset-2 dark:text-brand-400;
+  @apply text-accent-600 underline underline-offset-2 dark:text-accent-400;
 }
 .prose-memo ul {
   @apply my-2.5 list-disc space-y-1 pl-6;
@@ -201,14 +195,14 @@
   @apply my-2.5 list-decimal space-y-1 pl-6;
 }
 .prose-memo blockquote {
-  @apply my-3 border-l-4 border-brand-200 pl-4 text-slate-500 italic dark:border-brand-800 dark:text-slate-400;
+  @apply my-3 border-l-2 border-slate-300 pl-4 text-slate-500 dark:border-slate-700 dark:text-slate-400;
 }
 .prose-memo code {
-  @apply rounded-md bg-slate-100 px-1.5 py-0.5 text-[0.85em] dark:bg-slate-800;
+  @apply rounded bg-slate-100 px-1.5 py-0.5 text-[0.85em] dark:bg-slate-800;
   font-family: var(--font-mono);
 }
 .prose-memo pre {
-  @apply my-3 overflow-x-auto rounded-xl bg-slate-900 p-4 text-sm text-slate-100 dark:bg-slate-800/80;
+  @apply my-3 overflow-x-auto rounded-lg bg-slate-900 p-4 text-sm text-slate-100 dark:bg-slate-900;
 }
 .prose-memo pre code {
   @apply bg-transparent p-0 text-inherit;
@@ -221,13 +215,13 @@
 }
 .prose-memo th,
 .prose-memo td {
-  @apply border border-slate-200 px-3 py-2 text-left dark:border-slate-700;
+  @apply border border-slate-200 px-3 py-2 text-left dark:border-slate-800;
 }
 .prose-memo th {
   @apply bg-slate-50 font-semibold dark:bg-slate-800/60;
 }
 .prose-memo img {
-  @apply my-3 max-w-full rounded-xl;
+  @apply my-3 max-w-full rounded-lg;
 }
 .prose-memo input[type="checkbox"] {
   @apply mr-2 align-middle;

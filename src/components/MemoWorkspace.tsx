@@ -227,7 +227,7 @@ export function MemoWorkspace({
       {/* ------------------------------ 列表 ------------------------------ */}
       <section
         className={cn(
-          "flex w-full min-w-0 flex-col border-r border-slate-200 bg-white lg:w-[22rem] lg:shrink-0 dark:border-slate-800 dark:bg-slate-900",
+          "flex w-full min-w-0 flex-col border-r border-slate-200 lg:w-80 lg:shrink-0 dark:border-slate-800",
           selectedId && "hidden lg:flex",
         )}
       >
@@ -254,19 +254,17 @@ export function MemoWorkspace({
 
         <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto p-2.5">
           {isEmpty ? (
-            <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
-              <span className="grid size-14 place-items-center rounded-2xl bg-brand-50 text-brand-500 dark:bg-brand-950/50 dark:text-brand-300">
-                <IconMemo className="size-7" />
-              </span>
-              <p className="text-sm font-medium">还没有备忘录</p>
-              <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-                点右上角的 + 写点什么吧，
-                <br />
-                内容会自动保存。
+            <div className="flex flex-col items-center gap-2.5 px-6 py-16 text-center">
+              <IconMemo className="size-5 text-slate-300 dark:text-slate-600" />
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                还没有备忘录
               </p>
-              <button type="button" onClick={createMemo} className="btn-primary mt-1">
-                <IconPlus className="size-4" />
-                新建备忘录
+              <button
+                type="button"
+                onClick={createMemo}
+                className="btn-outline mt-1"
+              >
+                新建一条
               </button>
             </div>
           ) : filtered.length === 0 ? (
@@ -284,30 +282,30 @@ export function MemoWorkspace({
                       type="button"
                       onClick={() => selectMemo(memo)}
                       className={cn(
-                        "w-full rounded-xl border p-3 text-left transition",
+                        "w-full rounded-lg px-3 py-2.5 text-left transition",
                         active
-                          ? "border-brand-200 bg-brand-50/70 ring-1 ring-brand-200 dark:border-brand-800 dark:bg-brand-950/40 dark:ring-brand-900"
-                          : "border-transparent hover:border-slate-200 hover:bg-slate-50 dark:hover:border-slate-700 dark:hover:bg-slate-800/60",
+                          ? "bg-slate-100 dark:bg-slate-800"
+                          : "hover:bg-slate-50 dark:hover:bg-slate-900",
                       )}
                     >
                       <div className="flex items-center gap-2">
                         <span
                           className={cn(
-                            "size-2 shrink-0 rounded-full",
+                            "size-1.5 shrink-0 rounded-full",
                             COLOR_STYLES[color]?.dot ?? COLOR_STYLES.slate.dot,
                           )}
                         />
-                        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                        <span className="min-w-0 flex-1 truncate text-sm">
                           {memo.title.trim() || "无标题备忘"}
                         </span>
                         {memo.pinned && (
-                          <IconPin className="size-3.5 shrink-0 text-amber-500" />
+                          <IconPin className="size-3 shrink-0 text-slate-400 dark:text-slate-500" />
                         )}
                       </div>
-                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-400 dark:text-slate-500">
                         {memo.content.trim() || "（暂无内容）"}
                       </p>
-                      <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                      <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-600">
                         {relativeTime(memo.updatedAt)}
                       </p>
                     </button>
@@ -322,28 +320,23 @@ export function MemoWorkspace({
       {/* ------------------------------ 编辑器 ----------------------------- */}
       <section
         className={cn(
-          "flex min-h-0 min-w-0 flex-1 flex-col bg-slate-50/60 dark:bg-slate-950/40",
+          "flex min-h-0 min-w-0 flex-1 flex-col",
           !selectedId && "hidden lg:flex",
         )}
       >
         {!draft ? (
           <div className="grid flex-1 place-items-center px-6 text-center">
-            <div className="flex flex-col items-center gap-3">
-              <span className="grid size-16 place-items-center rounded-2xl bg-white text-slate-400 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
-                <IconPencil className="size-7" />
-              </span>
-              <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                选择左侧的一条备忘录开始编辑
-              </p>
-              <p className="text-xs text-slate-400">
-                或者点击「+」新建一条
+            <div className="flex flex-col items-center gap-2.5">
+              <IconPencil className="size-5 text-slate-300 dark:text-slate-600" />
+              <p className="text-sm text-slate-400 dark:text-slate-500">
+                选择左侧的一条备忘录
               </p>
             </div>
           </div>
         ) : (
           <>
             {/* 工具栏 */}
-            <div className="glass flex shrink-0 flex-wrap items-center gap-1.5 border-b border-slate-200 px-3 py-2 dark:border-slate-800">
+            <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-slate-200 px-3 py-2 dark:border-slate-800">
               <button
                 type="button"
                 className="btn-ghost px-2.5 py-2 lg:hidden"
@@ -356,30 +349,23 @@ export function MemoWorkspace({
                 ← 返回
               </button>
 
-              <span
-                className={cn(
-                  "ml-1 hidden items-center gap-1.5 text-xs font-medium sm:inline-flex",
-                  status === "saving"
-                    ? "text-amber-600 dark:text-amber-400"
-                    : "text-emerald-600 dark:text-emerald-400",
-                )}
-              >
+              <span className="ml-1 hidden items-center gap-1.5 text-xs text-slate-400 sm:inline-flex dark:text-slate-500">
                 {status === "saving" ? (
                   <>
-                    <span className="size-3 animate-spin rounded-full border-2 border-amber-300 border-t-amber-600" />
-                    保存中…
+                    <span className="size-3 animate-spin rounded-full border-[1.5px] border-slate-300 border-t-slate-500 dark:border-slate-700 dark:border-t-slate-400" />
+                    保存中
                   </>
                 ) : (
                   <>
                     <IconCheck className="size-3.5" />
-                    已自动保存
+                    已保存
                   </>
                 )}
               </span>
 
-              <div className="ml-auto flex items-center gap-1.5">
-                {/* 颜色 */}
-                <div className="flex items-center gap-1 rounded-xl bg-slate-100/80 px-2 py-1.5 dark:bg-slate-800/70">
+              <div className="ml-auto flex items-center gap-0.5">
+                {/* 颜色：只留小圆点，去掉容器底色 */}
+                <div className="mr-1 hidden items-center gap-1.5 sm:flex">
                   {MEMO_COLORS.map((c) => (
                     <button
                       key={c}
@@ -388,11 +374,11 @@ export function MemoWorkspace({
                       aria-label={`颜色：${c}`}
                       onClick={() => setDraft((d) => (d ? { ...d, color: c } : d))}
                       className={cn(
-                        "size-4 rounded-full transition",
+                        "size-3 rounded-full transition",
                         COLOR_STYLES[c].dot,
                         draft.color === c
-                          ? "scale-110 ring-2 ring-slate-400 ring-offset-1 ring-offset-slate-100 dark:ring-slate-500 dark:ring-offset-slate-800"
-                          : "opacity-60 hover:opacity-100",
+                          ? "ring-1 ring-slate-400 ring-offset-1 ring-offset-white dark:ring-slate-500 dark:ring-offset-slate-950"
+                          : "opacity-50 hover:opacity-100",
                       )}
                     />
                   ))}
@@ -407,23 +393,28 @@ export function MemoWorkspace({
                   className={cn(
                     "btn p-2",
                     draft.pinned
-                      ? "bg-amber-100 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400"
+                      ? "bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100"
                       : "btn-ghost",
                   )}
                 >
-                  <IconPin className="size-[18px]" />
+                  <IconPin className="size-4" />
                 </button>
 
                 <button
                   type="button"
                   title={preview ? "编辑" : "预览 Markdown"}
                   onClick={() => setPreview((v) => !v)}
-                  className={cn("btn p-2", preview ? "btn-primary" : "btn-ghost")}
+                  className={cn(
+                    "btn p-2",
+                    preview
+                      ? "bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100"
+                      : "btn-ghost",
+                  )}
                 >
                   {preview ? (
-                    <IconPencil className="size-[18px]" />
+                    <IconPencil className="size-4" />
                   ) : (
-                    <IconEye className="size-[18px]" />
+                    <IconEye className="size-4" />
                   )}
                 </button>
 
@@ -433,7 +424,7 @@ export function MemoWorkspace({
                   onClick={() => void deleteMemo(draft.id)}
                   className="btn-danger p-2"
                 >
-                  <IconTrash className="size-[18px]" />
+                  <IconTrash className="size-4" />
                 </button>
               </div>
             </div>

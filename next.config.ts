@@ -14,7 +14,8 @@ const nextConfig: NextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           {
             key: "Permissions-Policy",
-            value: "camera=(self), microphone=(), geolocation=()",
+            // 不使用摄像头；屏幕捕获仅允许同源（用于扫描屏幕上的二维码）
+            value: "camera=(), microphone=(), geolocation=(), display-capture=(self)",
           },
         ],
       },

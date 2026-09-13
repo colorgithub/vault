@@ -11,7 +11,7 @@ export const metadata: Metadata = {
     template: `%s · ${APP_NAME}`,
   },
   description:
-    "现代化网页备忘录与 2FA 验证器：多账号隔离、实时验证码、二维码扫描导入。",
+    "现代化网页备忘录与 2FA 验证器：多账号隔离、实时验证码、二维码截图识别导入。",
   applicationName: APP_NAME,
   icons: {
     icon: [{ url: "/icon.svg", type: "image/svg+xml" }],

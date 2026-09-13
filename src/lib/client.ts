@@ -128,25 +128,6 @@ export function relativeTime(input: string | number | Date): string {
   });
 }
 
-/** 依据字符串稳定生成一个渐变色，用于账户头像 */
-export function avatarGradient(key: string): string {
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) {
-    hash = (hash * 31 + key.charCodeAt(i)) | 0;
-  }
-  const palettes = [
-    "from-violet-500 to-indigo-500",
-    "from-sky-500 to-cyan-500",
-    "from-emerald-500 to-teal-500",
-    "from-amber-500 to-orange-500",
-    "from-rose-500 to-pink-500",
-    "from-fuchsia-500 to-purple-500",
-    "from-lime-500 to-green-500",
-    "from-blue-500 to-indigo-500",
-  ];
-  return palettes[Math.abs(hash) % palettes.length];
-}
-
 export function initialsOf(text: string): string {
   const trimmed = text.trim();
   if (!trimmed) return "?";

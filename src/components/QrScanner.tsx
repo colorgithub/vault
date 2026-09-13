@@ -2,30 +2,81 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { IconCamera, IconRefresh, IconUpload } from "@/components/Icons";
+import { IconClipboard, IconScreen, IconUpload } from "@/components/Icons";
+import { cn } from "@/lib/client";
 
-type Status = "idle" | "starting" | "running" | "error";
+/** 出于体积考虑，jsQR 在真正需要解码时才动态载入 */
+async function decodeImage(
+  source: CanvasImageSource,
+  width: number,
+  height: number,
+): Promise<string | null> {
+  if (width < 8 || height < 8) return null;
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
 
-export function QrScanner({
-  onResult,
-  onError,
-}: {
-  onResult: (text: string) => void;
-  onError?: (message: string) => void;
-}) {
+  const { default: jsQR } = await import("jsqr");
+
+  const attempt = (w: number, h: number) => {
+    canvas.width = w;
+    canvas.height = h;
+    ctx.drawImage(source, 0, 0, w, h);
+    const image = ctx.getImageData(0, 0, w, h);
+    return (
+      jsQR(image.data, w, h, { inversionAttempts: "attemptBoth" })?.data ?? null
+    );
+  };
+
+  // 先按原图试一次
+  const direct = attempt(width, height);
+  if (direct) return direct;
+
+  // 截图常常带大块留白，降采样再试一次
+  const longest = Math.max(width, height);
+  if (longest > 1600) {
+    const scale = 1600 / longest;
+    return attempt(Math.round(width * scale), Math.round(height * scale));
+  }
+  return null;
+}
+
+async function decodeBlob(blob: Blob): Promise<string | null> {
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    return await decodeImage(img, img.naturalWidth, img.naturalHeight);
+  } catch {
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+type Status = "idle" | "capturing";
+
+export function QrScanner({ onResult }: { onResult: (text: string) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef(0);
-  const cancelledRef = useRef(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const lastHitRef = useRef<{ text: string; at: number }>({ text: "", at: 0 });
 
   const [status, setStatus] = useState<Status>("idle");
-  const [message, setMessage] = useState("");
+  const [hint, setHint] = useState("");
+  const [dragging, setDragging] = useState(false);
+  const [busy, setBusy] = useState(false);
 
+  /** 命中结果：同一张码 2.5 秒内不重复触发 */
   const handleHit = useCallback(
     (text: string) => {
       const now = Date.now();
-      if (lastHitRef.current.text === text && now - lastHitRef.current.at < 2500) {
+      if (
+        lastHitRef.current.text === text &&
+        now - lastHitRef.current.at < 2500
+      ) {
         return;
       }
       lastHitRef.current = { text, at: now };
@@ -34,58 +85,47 @@ export function QrScanner({
     [onResult],
   );
 
-  const stop = useCallback(() => {
-    cancelledRef.current = true;
+  /* ---------------------------- 屏幕捕获 ---------------------------- */
+
+  const stopCapture = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
+    setStatus("idle");
   }, []);
 
-  const start = useCallback(async () => {
-    stop();
-    cancelledRef.current = false;
-    setStatus("starting");
-    setMessage("");
-
-    if (
-      typeof navigator === "undefined" ||
-      !navigator.mediaDevices?.getUserMedia
-    ) {
-      setStatus("error");
-      setMessage("当前浏览器不支持摄像头，请改用「上传二维码图片」方式。");
+  const startCapture = useCallback(async () => {
+    setHint("");
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      setHint("当前浏览器不支持屏幕捕获，请改用粘贴或选择图片。");
       return;
     }
+    stopCapture();
+    setStatus("capturing");
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: "environment" },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: 10 },
         audio: false,
       });
-      if (cancelledRef.current) {
-        stream.getTracks().forEach((t) => t.stop());
-        return;
-      }
       streamRef.current = stream;
+      stream.getVideoTracks()[0]?.addEventListener("ended", () => {
+        if (streamRef.current === stream) stopCapture();
+      });
 
       const video = videoRef.current;
       if (!video) return;
       video.srcObject = stream;
-      video.setAttribute("playsinline", "true");
+      video.muted = true;
       await video.play().catch(() => undefined);
 
       const canvas = document.createElement("canvas");
       const ctx = canvas.getContext("2d", { willReadFrequently: true });
       const { default: jsQR } = await import("jsqr");
 
-      setStatus("running");
-
       const tick = () => {
-        if (cancelledRef.current) return;
+        if (!streamRef.current) return;
         const v = videoRef.current;
         if (v && ctx && v.readyState === v.HAVE_ENOUGH_DATA) {
           const w = v.videoWidth;
@@ -99,11 +139,9 @@ export function QrScanner({
               const found = jsQR(image.data, w, h, {
                 inversionAttempts: "attemptBoth",
               });
-              if (found?.data) {
-                handleHit(found.data);
-              }
+              if (found?.data) handleHit(found.data);
             } catch {
-              /* 某些浏览器在帧未就绪时会抛错，忽略 */
+              /* 帧未就绪时忽略 */
             }
           }
         }
@@ -112,140 +150,205 @@ export function QrScanner({
       rafRef.current = requestAnimationFrame(tick);
     } catch (err) {
       const name = (err as { name?: string })?.name;
-      const hint =
+      setStatus("idle");
+      setHint(
         name === "NotAllowedError"
-          ? "摄像头权限被拒绝，请在浏览器地址栏允许摄像头后重试。"
-          : name === "NotFoundError"
-            ? "没有检测到摄像头设备，请改用上传图片方式。"
-            : "无法启动摄像头，请改用上传二维码图片方式。";
-      setStatus("error");
-      setMessage(hint);
-      onError?.(hint);
+          ? "已取消屏幕共享。"
+          : "无法开始屏幕捕获，请改用粘贴或选择图片。",
+      );
     }
-  }, [handleHit, onError, stop]);
+  }, [handleHit, stopCapture]);
 
-  useEffect(() => {
-    void start();
-    return () => stop();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useEffect(() => () => stopCapture(), [stopCapture]);
 
-  /** 从图片文件解析 */
-  async function handleFile(file: File) {
-    setMessage("");
-    try {
-      const bitmapUrl = URL.createObjectURL(file);
-      const img = new Image();
-      img.src = bitmapUrl;
-      await img.decode();
-      const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext("2d", { willReadFrequently: true });
-      if (!ctx) throw new Error("no-ctx");
-      ctx.drawImage(img, 0, 0);
-      URL.revokeObjectURL(bitmapUrl);
+  /* ---------------------------- 图片处理 ---------------------------- */
 
-      const { default: jsQR } = await import("jsqr");
-      const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const found = jsQR(image.data, canvas.width, canvas.height, {
-        inversionAttempts: "attemptBoth",
-      });
-      if (found?.data) {
-        handleHit(found.data);
-        setMessage("已识别图片中的二维码");
-      } else {
-        setMessage("图片里没有识别到二维码，换一张更清晰的试试。");
+  const processBlob = useCallback(
+    async (blob: Blob) => {
+      setBusy(true);
+      setHint("");
+      try {
+        const text = await decodeBlob(blob);
+        if (text) handleHit(text);
+        else setHint("没有识别到二维码，换一张更清晰的图片试试。");
+      } finally {
+        setBusy(false);
       }
+    },
+    [handleHit],
+  );
+
+  /** Ctrl/⌘ + V 粘贴：优先取图片，其次接受 otpauth 纯文本 */
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      const data = event.clipboardData;
+      if (!data) return;
+
+      for (const item of data.items) {
+        if (item.kind === "file" && item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) {
+            event.preventDefault();
+            void processBlob(file);
+            return;
+          }
+        }
+      }
+
+      const text = data.getData("text")?.trim();
+      if (text && /^otpauth(-migration)?:\/\//i.test(text)) {
+        event.preventDefault();
+        handleHit(text);
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [handleHit, processBlob]);
+
+  /** 从系统剪贴板读取图片（需浏览器授权） */
+  async function pasteFromClipboard() {
+    setHint("");
+    const clipboard = navigator.clipboard as
+      | (Clipboard & { read?: () => Promise<ClipboardItem[]> })
+      | undefined;
+    if (!clipboard?.read) {
+      setHint("当前浏览器不支持直接读取剪贴板，请按 Ctrl/⌘ + V 粘贴。");
+      return;
+    }
+    try {
+      const items = await clipboard.read();
+      for (const item of items) {
+        const type = item.types.find((t) => t.startsWith("image/"));
+        if (type) {
+          await processBlob(await item.getType(type));
+          return;
+        }
+      }
+      setHint("剪贴板里没有图片。先截图或复制二维码，再点这里。");
     } catch {
-      setMessage("图片读取失败，请换一张再试。");
+      setHint("浏览器拒绝了剪贴板读取。请直接按 Ctrl/⌘ + V 粘贴。");
     }
   }
 
   return (
     <div className="space-y-3">
-      <div className="relative aspect-square w-full overflow-hidden rounded-2xl bg-slate-900 ring-1 ring-slate-800 sm:aspect-video">
+      {/* 预览 / 拖放区 */}
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          const file = Array.from(e.dataTransfer.files).find((f) =>
+            f.type.startsWith("image/"),
+          );
+          if (file) void processBlob(file);
+          else setHint("请拖入一张图片文件。");
+        }}
+        className={cn(
+          "relative grid w-full place-items-center overflow-hidden rounded-xl border border-dashed transition",
+          status === "capturing" ? "aspect-video" : "min-h-[8rem] py-8",
+          dragging
+            ? "border-slate-400 bg-slate-50 dark:border-slate-500 dark:bg-slate-900"
+            : "border-slate-200 dark:border-slate-800",
+        )}
+      >
         <video
           ref={videoRef}
-          className="size-full object-cover"
           muted
           playsInline
           autoPlay
+          className={cn(
+            "size-full object-contain",
+            status === "capturing" ? "block" : "hidden",
+          )}
         />
 
-        {/* 扫描框 */}
-        {status === "running" && (
+        {status === "capturing" ? (
           <div className="pointer-events-none absolute inset-0">
-            <div className="absolute left-1/2 top-1/2 size-[62%] max-w-[16rem] -translate-x-1/2 -translate-y-1/2 sm:size-[58%]">
-              <div className="absolute inset-0 rounded-2xl ring-2 ring-white/70" />
-              {[
-                "left-0 top-0 border-l-4 border-t-4 rounded-tl-2xl",
-                "right-0 top-0 border-r-4 border-t-4 rounded-tr-2xl",
-                "left-0 bottom-0 border-b-4 border-l-4 rounded-bl-2xl",
-                "right-0 bottom-0 border-b-4 border-r-4 rounded-br-2xl",
-              ].map((cls) => (
-                <span
-                  key={cls}
-                  className={`absolute size-8 border-brand-400 ${cls}`}
-                />
-              ))}
+            <div className="absolute left-1/2 top-1/2 size-[46%] -translate-x-1/2 -translate-y-1/2">
+              <div className="absolute inset-0 rounded-lg border border-white/60" />
               <span
-                className="absolute inset-x-2 h-0.5 bg-brand-400/90 shadow-[0_0_12px_2px] shadow-brand-400/60"
-                style={{ animation: "scan-line 2.4s ease-in-out infinite alternate" }}
+                className="absolute inset-x-1 h-px bg-white/90 shadow-[0_0_8px_1px] shadow-white/60"
+                style={{
+                  animation: "scan-line 2.4s ease-in-out infinite alternate",
+                }}
               />
             </div>
+            <button
+              type="button"
+              onClick={stopCapture}
+              className="pointer-events-auto absolute bottom-3 left-1/2 -translate-x-1/2 rounded-lg bg-white/90 px-3 py-1.5 text-xs font-medium text-slate-900"
+            >
+              停止共享
+            </button>
           </div>
-        )}
-
-        {status !== "running" && (
-          <div className="absolute inset-0 grid place-items-center bg-slate-900/80 px-6 text-center">
-            <div className="flex flex-col items-center gap-2 text-slate-300">
-              {status === "starting" ? (
-                <>
-                  <span className="size-7 animate-spin rounded-full border-2 border-slate-600 border-t-brand-400" />
-                  <p className="text-sm">正在启动摄像头…</p>
-                </>
-              ) : (
-                <>
-                  <IconCamera className="size-8 text-slate-500" />
-                  <p className="text-sm">{message || "摄像头未启动"}</p>
-                  <button
-                    type="button"
-                    onClick={() => void start()}
-                    className="btn-outline mt-2 border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700"
-                  >
-                    <IconRefresh className="size-4" />
-                    重试
-                  </button>
-                </>
-              )}
-            </div>
+        ) : (
+          <div className="px-6 text-center">
+            <IconClipboard className="mx-auto size-5 text-slate-300 dark:text-slate-600" />
+            <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+              {busy ? "正在识别…" : "粘贴或拖入含有二维码的图片"}
+            </p>
+            <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+              按{" "}
+              <kbd className="rounded border border-slate-200 px-1 dark:border-slate-700">
+                Ctrl/⌘ V
+              </kbd>{" "}
+              直接粘贴截图
+            </p>
           </div>
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <label className="btn-outline cursor-pointer">
+      {/* 三个入口 */}
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void pasteFromClipboard()}
+          className="btn-outline flex-1"
+        >
+          <IconClipboard className="size-4" />
+          粘贴图片
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            status === "capturing" ? stopCapture() : void startCapture()
+          }
+          className={cn(
+            "btn-outline flex-1",
+            status === "capturing" && "btn-primary",
+          )}
+        >
+          <IconScreen className="size-4" />
+          {status === "capturing" ? "停止共享" : "截取屏幕"}
+        </button>
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          className="btn-outline flex-1"
+        >
           <IconUpload className="size-4" />
-          上传二维码图片
-          <input
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void handleFile(file);
-              e.target.value = "";
-            }}
-          />
-        </label>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          对准二维码即可自动识别，也支持相册里的截图
-        </p>
+          选择图片
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void processBlob(file);
+            e.target.value = "";
+          }}
+        />
       </div>
 
-      {message && status === "running" && (
-        <p className="text-xs text-slate-500 dark:text-slate-400">{message}</p>
+      {hint && (
+        <p className="text-xs text-slate-400 dark:text-slate-500">{hint}</p>
       )}
     </div>
   );
