@@ -44,28 +44,31 @@
 
 ## 🚀 部署到 Vercel
 
-### 第一步：准备数据库
+### 第一步：在 Vercel 里直接创建数据库
 
-Vercel 本身不提供数据库，需要一个 Postgres。推荐 **Neon**（免费额度充足，与 Vercel 集成最好）：
+不需要离开 Vercel，也不需要单独注册数据库服务：
 
-1. 打开 [Vercel Marketplace → Neon](https://vercel.com/marketplace/neon)，或直接去 [neon.tech](https://neon.tech) 注册
-2. 创建一个项目，复制 **Connection string**（形如 `postgresql://user:pass@ep-xxx.aws.neon.tech/neondb?sslmode=require`）
+1. 先在 [vercel.com/new](https://vercel.com/new) 导入本仓库（Framework Preset 会自动识别为 **Next.js**）
+2. 进入项目 → 顶部 **Storage** 标签 → **Create Database** → 选择 **Neon**（Postgres）
+3. 选好区域和套餐（免费额度足够），点创建
+4. 创建完会自动提示 **Connect Project**，选中你刚部署的项目，并勾选
+   **Production / Preview / Development** 三个环境
+5. 点 **Connect**
 
-> 其它可选：Supabase、Vercel Postgres、Railway、自建 Postgres 均可，只要有 `DATABASE_URL`。
+连接完成后，Vercel **会自动往项目里注入 `DATABASE_URL`**，你不需要手动复制连接串。
 
-### 第二步：部署代码
+> 💡 **多数据库注意**：如果你在同一个项目里挂了多个数据库，Vercel 会让你设一个前缀
+> （例如 `PRIMARY_`），变量名就变成 `PRIMARY_DATABASE_URL`。
+> 本项目做了兜底解析，只要以 `_DATABASE_URL` 结尾就能识别，不用改代码。
 
-**方式 A：通过 GitHub（推荐）**
+### 第二步：配置会话密钥
 
-1. 把本项目推送到 GitHub 仓库
-2. 在 [vercel.com/new](https://vercel.com/new) 导入该仓库
-3. Framework Preset 会自动识别为 **Next.js**，无需改动构建命令
-4. 在 **Environment Variables** 里添加下面两个变量：
+项目 → **Settings → Environment Variables**，添加：
 
 | 变量名 | 必填 | 说明 |
 | --- | --- | --- |
-| `DATABASE_URL` | ✅ | 上一步拿到的 Postgres 连接串 |
-| `AUTH_SECRET` | ✅ | 会话签名密钥，长度 ≥ 16 的随机字符串 |
+| `AUTH_SECRET` | ✅ | 会话签名密钥，长度 ≥ 16 的随机字符串。**必须手动添加** |
+| `DATABASE_URL` | ⬜ | 上一步由 Vercel 自动注入，通常不用管 |
 | `NEXT_PUBLIC_APP_NAME` | ⬜ | 站点名称，默认 `MemoVault` |
 
 生成一个安全的 `AUTH_SECRET`：
@@ -74,27 +77,64 @@ Vercel 本身不提供数据库，需要一个 Postgres。推荐 **Neon**（免�
 node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 ```
 
-5. 点击 **Deploy**，等待完成即可。
+### 第三步：部署 & 自检
 
-**方式 B：Vercel CLI**
+点 **Deploy** 即可。<mark>不需要手动建表</mark>——应用第一次收到请求时会自动执行幂等的 `CREATE TABLE IF NOT EXISTS`。
 
-```bash
-npm i -g vercel
-vercel                    # 首次部署，按提示关联项目
-vercel env add DATABASE_URL
-vercel env add AUTH_SECRET
-vercel --prod
+部署完成后访问 **`/api/health`** 可以确认数据库是否连通，例如：
+
+```json
+{ "status": "ok",
+  "database": { "connected": true, "envVar": "DATABASE_URL", "latencyMs": 42 } }
 ```
 
-### 第三步：建表
+如果没连上，它会告诉你当前环境里存在哪些数据库相关变量，方便排查（只会输出变量名，不会泄露连接串内容）。
 
-**不需要手动建表。** 应用第一次收到 API 请求时会自动执行幂等的 `CREATE TABLE IF NOT EXISTS`，表结构即刻就绪。
+---
 
-如果你想用正规的迁移流程，也可以在本地对云端数据库执行：
+## 🔌 数据库连接串是怎么找的
+
+在 Vercel 上「创建 / 连接数据库」有好几种方式，不同集成注入的变量名并不一样。为了不用管这些差异，程序会按下面的顺序自动查找，命中任意一个即可：
+
+| 顺序 | 变量名 | 来源 |
+| --- | --- | --- |
+| 1 | `DATABASE_URL` | Vercel Marketplace 的 Neon 集成（默认） |
+| 2 | `POSTGRES_URL` | 老版 Vercel Postgres 模板 |
+| 3 | `POSTGRES_PRISMA_URL` | Prisma Postgres 集成 |
+| 4 | `DATABASE_URL_UNPOOLED` | Neon 直连串（连接池不可用时的兜底） |
+| 5 | `POSTGRES_URL_NON_POOLING` | 同上，Vercel Postgres 命名 |
+| 6 | `NEON_DATABASE_URL` | Neon 手动接入 |
+| 7 | 任意 `*_DATABASE_URL` | 带自定义前缀的集成，如 `PRIMARY_DATABASE_URL` |
+| 8 | `PGHOST` + `PGUSER` + `PGPASSWORD` + `PGDATABASE` + `PGPORT` | 零散变量拼装 |
+
+连接池配置为 `max: 1` + `prepare: false`，兼容 Neon / Supabase 的 PgBouncer 事务池模式，也适配 Vercel serverless 的短生命周期。
+
+### 手动连接（可选）
+
+如果你想自己指定数据库，在 **Settings → Environment Variables** 里直接填 `DATABASE_URL` 即可，它的优先级最高：
+
+```bash
+DATABASE_URL="postgresql://user:pass@host/db?sslmode=require"
+```
+
+也可以用正规迁移流程替代自动建表：
 
 ```bash
 DATABASE_URL="你的连接串" npm run db:push
 ```
+
+> 自动建表与 `db:push` 的约束名、索引名已对齐，两条路径不会互相冲突（push 会显示 `No changes detected`）。
+
+### 用 Vercel CLI 部署（可选）
+
+```bash
+npm i -g vercel
+vercel                    # 首次部署，按提示关联项目
+vercel env add AUTH_SECRET
+vercel --prod
+```
+
+数据库仍然推荐在 Vercel 网页控制台里创建并连接，这样变量会自动注入。
 
 ---
 
@@ -144,6 +184,12 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5432/memovault"
 ## 🔌 API 一览
 
 所有接口都返回 JSON，未登录时返回 `401`。
+
+### 自检 `/api/health`
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/health` | 数据库连通性与所用环境变量名，部署后第一件事就访问它 |
 
 ### 认证 `/api/auth`
 
@@ -200,6 +246,7 @@ src/
 │   ├── vault/                  # 主应用（需登录）
 │   ├── globals.css             # Tailwind v4 主题与组件样式
 │   └── api/
+│       ├── health/route.ts     # 部署自检
 │       ├── auth/{register,login,logout,me}/route.ts
 │       ├── memos/route.ts  memos/[id]/route.ts
 │       └── totp/route.ts   totp/[id]/route.ts

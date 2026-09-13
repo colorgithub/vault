@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getSession, type SessionPayload } from "@/lib/auth";
-import { ensureSchema } from "@/lib/db";
+import { diagnoseEnv, ensureSchema } from "@/lib/db";
 
 export class ApiError extends Error {
   status: number;
@@ -34,9 +34,17 @@ export function handler<Ctx>(
       if (err instanceof ApiError) return fail(err.message, err.status);
       const message = err instanceof Error ? err.message : "服务器内部错误";
       console.error("[api]", req.method, new URL(req.url).pathname, err);
-      if (/DATABASE_URL/.test(message)) {
-        return fail("服务端未配置数据库连接（DATABASE_URL）", 500);
+
+      if (message === "NO_DATABASE_URL") {
+        const { found, hint } = diagnoseEnv();
+        return fail(
+          `服务端未检测到数据库连接串。${hint}（当前环境里与数据库相关的变量：${
+            found.length ? found.join("、") : "一个都没有"
+          }）`,
+          500,
+        );
       }
+
       return fail(message, 500);
     }
   };
