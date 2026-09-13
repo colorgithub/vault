@@ -1,0 +1,111 @@
+import { desc, eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+
+import { ApiError, handler, ok, readJson, requireUser, str } from "@/lib/api";
+import { db } from "@/lib/db";
+import { totpAccounts } from "@/lib/db/schema";
+import {
+  clampDigits,
+  clampPeriod,
+  generateTotp,
+  isValidBase32,
+  normalizeAlgorithm,
+  normalizeBase32,
+  parseOtpUri,
+} from "@/lib/totp";
+
+export const dynamic = "force-dynamic";
+
+export interface AccountInput {
+  issuer: string;
+  accountName: string;
+  secret: string;
+  algorithm: string;
+  digits: number;
+  period: number;
+  note: string;
+}
+
+function buildInput(raw: Record<string, unknown>): AccountInput {
+  const secret = normalizeBase32(str(raw.secret));
+  if (!isValidBase32(secret))
+    throw new ApiError("密钥无效，应为至少 16 位的 Base32 字符串");
+
+  const issuer = str(raw.issuer).trim().slice(0, 80);
+  const accountName =
+    str(raw.accountName).trim().slice(0, 120) || issuer || "未命名账户";
+
+  return {
+    issuer,
+    accountName,
+    secret,
+    algorithm: normalizeAlgorithm(str(raw.algorithm, "SHA1")),
+    digits: clampDigits(Number(raw.digits ?? 6)),
+    period: clampPeriod(Number(raw.period ?? 30)),
+    note: str(raw.note).slice(0, 500),
+  };
+}
+
+/** 列出全部 2FA 账户（含密钥，供前端实时计算验证码） */
+export const GET = handler(async () => {
+  const user = await requireUser();
+  const rows = await db
+    .select()
+    .from(totpAccounts)
+    .where(eq(totpAccounts.userId, user.userId))
+    .orderBy(desc(totpAccounts.createdAt));
+  return ok({ accounts: rows });
+});
+
+/**
+ * 新建。支持两种请求体：
+ *   1. 单个：{ issuer, accountName, secret, ... }
+ *   2. 批量：{ uri: "otpauth-migration://..." } 或 { accounts: [...] }
+ */
+export const POST = handler(async (req: Request) => {
+  const user = await requireUser();
+  const body = await readJson<Record<string, unknown>>(req);
+
+  let inputs: AccountInput[] = [];
+
+  if (typeof body.uri === "string") {
+    const parsed = parseOtpUri(body.uri);
+    if (parsed.length === 0)
+      throw new ApiError("无法识别该二维码内容，请确认是 otpauth:// 链接");
+    inputs = parsed.map((p) =>
+      buildInput({ ...p, note: str(body.note) }),
+    );
+  } else if (Array.isArray(body.accounts)) {
+    inputs = body.accounts.map((item) =>
+      buildInput((item ?? {}) as Record<string, unknown>),
+    );
+  } else {
+    inputs = [buildInput(body)];
+  }
+
+  if (inputs.length === 0) throw new ApiError("没有可保存的账户");
+  if (inputs.length > 100) throw new ApiError("单次最多导入 100 个账户");
+
+  // 先校验所有密钥都能正常算码，避免存入坏数据
+  await Promise.all(
+    inputs.map((input) => generateTotp(input).catch(() => {
+      throw new ApiError(`账户「${input.accountName}」的密钥无法生成验证码`);
+    })),
+  );
+
+  const now = new Date();
+  const rows = await db
+    .insert(totpAccounts)
+    .values(
+      inputs.map((input) => ({
+        id: randomUUID(),
+        userId: user.userId,
+        ...input,
+        createdAt: now,
+        updatedAt: now,
+      })),
+    )
+    .returning();
+
+  return ok({ accounts: rows, count: rows.length }, 201);
+});
