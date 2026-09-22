@@ -16,6 +16,32 @@ export const BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 export const DEFAULT_PERIOD = 30;
 export const DEFAULT_DIGITS = 6;
 
+/** 密钥最短长度。提示文案必须与这里保持一致（历史上文案写的是 16）。 */
+export const MIN_SECRET_LENGTH = 8;
+
+/** Web Crypto 的 subtle 只在安全上下文（HTTPS / localhost）可用。 */
+export function hasWebCrypto(): boolean {
+  return (
+    typeof globalThis !== "undefined" &&
+    typeof globalThis.crypto !== "undefined" &&
+    typeof globalThis.crypto.subtle !== "undefined" &&
+    typeof globalThis.crypto.subtle.importKey === "function"
+  );
+}
+
+/**
+ * decodeURIComponent 遇到畸形转义（`%`、`%2`、`%zz`）会抛 URIError。
+ * 二维码内容完全由外部输入决定，绝不能让它把调用方炸掉。
+ */
+export function safeDecodeURIComponent(input: string): string {
+  try {
+    return decodeURIComponent(input);
+  } catch {
+    // 解不出来就退化成原串：宁可标签难看，也不要因为一个百分号丢掉整个账户
+    return input;
+  }
+}
+
 /* ------------------------------- Base32 ---------------------------------- */
 
 export function normalizeBase32(secret: string): string {
@@ -24,7 +50,7 @@ export function normalizeBase32(secret: string): string {
 
 export function isValidBase32(secret: string): boolean {
   const clean = normalizeBase32(secret);
-  return clean.length >= 8 && /^[A-Z2-7]+$/.test(clean);
+  return clean.length >= MIN_SECRET_LENGTH && /^[A-Z2-7]+$/.test(clean);
 }
 
 export function base32Decode(secret: string): Uint8Array {
@@ -93,6 +119,16 @@ export function clampDigits(digits?: number): number {
   return Math.floor(value);
 }
 
+/**
+ * 位数下拉框的可选值。
+ *
+ * 必须覆盖 clampDigits 接受的全部范围（4-10），否则迁移码里 4 位或 10 位的账户虽然
+ * 存得下，编辑框里却没有对应的 <option>，用户无法查看或重新选择。
+ */
+export const DIGIT_OPTIONS = [4, 5, 6, 7, 8, 9, 10] as const;
+
+export const ALGORITHM_OPTIONS = ["SHA1", "SHA256", "SHA512"] as const;
+
 export function clampPeriod(period?: number): number {
   const value = Number(period);
   if (!Number.isFinite(value) || value < 5 || value > 300) return DEFAULT_PERIOD;
@@ -106,6 +142,9 @@ export async function generateTotp(
   params: TotpParams,
   timestampMs: number = Date.now(),
 ): Promise<string> {
+  if (!hasWebCrypto()) {
+    throw new Error("当前环境不支持 Web Crypto（需要 HTTPS 或 localhost）");
+  }
   const digits = clampDigits(params.digits);
   const period = clampPeriod(params.period);
   const algorithm = normalizeAlgorithm(params.algorithm);
@@ -171,8 +210,12 @@ export interface ParsedOtpAccount {
 }
 
 function decodeBase64Bytes(input: string): Uint8Array {
-  const normalized = input.replace(/-/g, "+").replace(/_/g, "/");
+  // base64 里不存在空白字符。导出工具五花八门：有的把 `+` 原样留在查询串里，
+  // 而 URL 查询串语义会把 `+` 读成空格，所以这里把空格补回 `+` 再解码。
+  const cleaned = input.replace(/\s+/g, "+");
+  const normalized = cleaned.replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+
   if (typeof atob === "function") {
     const binary = atob(padded);
     const out = new Uint8Array(binary.length);
@@ -180,6 +223,29 @@ function decodeBase64Bytes(input: string): Uint8Array {
     return out;
   }
   return new Uint8Array(Buffer.from(padded, "base64"));
+}
+
+/**
+ * 从原始 URL 里取出查询参数，**不做 form 解码**。
+ *
+ * `new URL(...).searchParams` 会把 `+` 解析成空格（application/x-www-form-urlencoded
+ * 语义）。但 Google Authenticator 等导出工具生成的 `data=` 是标准 base64，其中的 `+`
+ * 是有效字符，一旦被换成空格，atob 就会抛错，整个批量导入静默失败。
+ * 因此这里直接在原始串上切分，只做百分号解码。
+ */
+function readRawQueryParam(raw: string, name: string): string | null {
+  const qIndex = raw.indexOf("?");
+  if (qIndex === -1) return null;
+  const query = raw.slice(qIndex + 1).split("#")[0];
+
+  for (const pair of query.split("&")) {
+    const eq = pair.indexOf("=");
+    if (eq === -1) continue;
+    const key = safeDecodeURIComponent(pair.slice(0, eq));
+    if (key !== name) continue;
+    return safeDecodeURIComponent(pair.slice(eq + 1));
+  }
+  return null;
 }
 
 function parseOtpauthUrl(raw: string): ParsedOtpAccount | null {
@@ -196,7 +262,8 @@ function parseOtpauthUrl(raw: string): ParsedOtpAccount | null {
   const secret = normalizeBase32(params.get("secret") ?? "");
   if (!isValidBase32(secret)) return null;
 
-  const label = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
+  // 标签同样来自外部输入，畸形转义（如 `50%off`）不能让整个解析抛异常
+  const label = safeDecodeURIComponent(url.pathname.replace(/^\/+/, ""));
   let issuer = params.get("issuer")?.trim() ?? "";
   let accountName = label;
   const sep = label.indexOf(":");
@@ -279,22 +346,26 @@ function decodeText(bytes: Uint8Array): string {
 }
 
 /** 解析 Google Authenticator 的 otpauth-migration:// 导出二维码 */
-function parseMigrationUri(raw: string): ParsedOtpAccount[] {
+function parseMigrationUri(raw: string): OtpParseResult {
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
-    return [];
+    return { accounts: [], error: "二维码内容不是一个合法的链接" };
   }
-  if (url.hostname.toLowerCase() !== "offline") return [];
-  const data = url.searchParams.get("data");
-  if (!data) return [];
+  if (url.hostname.toLowerCase() !== "offline") {
+    return { accounts: [], error: "这不是 Google Authenticator 的迁移二维码" };
+  }
+
+  // 用原始查询串取参：searchParams 会把 base64 里的 `+` 变成空格，导致解码失败
+  const data = readRawQueryParam(raw, "data");
+  if (!data) return { accounts: [], error: "迁移链接里缺少 data 参数" };
 
   let root: ProtoField[];
   try {
     root = readProto(decodeBase64Bytes(data));
   } catch {
-    return [];
+    return { accounts: [], error: "迁移数据无法解码，请重新生成导出二维码" };
   }
 
   const results: ParsedOtpAccount[] = [];
@@ -334,7 +405,11 @@ function parseMigrationUri(raw: string): ParsedOtpAccount[] {
       period,
     });
   }
-  return results;
+
+  if (results.length === 0) {
+    return { accounts: [], error: "迁移数据里没有解析出任何有效账户" };
+  }
+  return { accounts: results };
 }
 
 /**
@@ -342,29 +417,47 @@ function parseMigrationUri(raw: string): ParsedOtpAccount[] {
  * otpauth-migration://offline 批量导出。
  */
 export function parseOtpUri(raw: string): ParsedOtpAccount[] {
+  return parseOtpUriDetailed(raw).accounts;
+}
+
+export interface OtpParseResult {
+  accounts: ParsedOtpAccount[];
+  /** 解析失败的原因，供 UI 给出比「二维码无效」更具体的提示 */
+  error?: string;
+}
+
+/**
+ * 与 parseOtpUri 相同，但额外返回失败原因。
+ * 解析过程中绝不抛异常 —— 输入完全来自外部（二维码 / 剪贴板）。
+ */
+export function parseOtpUriDetailed(raw: string): OtpParseResult {
   const text = raw.trim();
-  if (!text) return [];
+  if (!text) return { accounts: [], error: "内容为空" };
   if (text.toLowerCase().startsWith("otpauth-migration://")) {
     return parseMigrationUri(text);
   }
   if (text.toLowerCase().startsWith("otpauth://")) {
     const parsed = parseOtpauthUrl(text);
-    return parsed ? [parsed] : [];
+    return parsed
+      ? { accounts: [parsed] }
+      : { accounts: [], error: "链接里缺少有效的 Base32 密钥" };
   }
   // 也允许用户直接粘贴一串 Base32 密钥
   if (isValidBase32(text)) {
-    return [
-      {
-        issuer: "",
-        accountName: "未命名账户",
-        secret: normalizeBase32(text),
-        algorithm: "SHA1",
-        digits: 6,
-        period: 30,
-      },
-    ];
+    return {
+      accounts: [
+        {
+          issuer: "",
+          accountName: "未命名账户",
+          secret: normalizeBase32(text),
+          algorithm: "SHA1",
+          digits: 6,
+          period: 30,
+        },
+      ],
+    };
   }
-  return [];
+  return { accounts: [], error: "无法识别该内容，请确认是 otpauth:// 链接或 Base32 密钥" };
 }
 
 export function buildOtpauthUri(account: {

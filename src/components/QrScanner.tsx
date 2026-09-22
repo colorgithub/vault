@@ -1,9 +1,43 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { IconClipboard, IconScreen, IconUpload } from "@/components/Icons";
-import { cn } from "@/lib/client";
+import { cn, getClientCaps } from "@/lib/client";
+
+/**
+ * 取 2D 上下文。
+ *
+ * `willReadFrequently` 是 Chromium 60 才认的选项；旧 WebView 上它会被忽略，
+ * 但个别更老的实现对未知字典项会直接返回 null。这里做一次兜底，
+ * 避免因为一个性能提示就让整个扫码功能失效。
+ */
+function get2dContext(
+  canvas: HTMLCanvasElement,
+): CanvasRenderingContext2D | null {
+  const withHint = canvas.getContext("2d", {
+    willReadFrequently: true,
+  }) as CanvasRenderingContext2D | null;
+  if (withHint) return withHint;
+  return canvas.getContext("2d") as CanvasRenderingContext2D | null;
+}
+
+/**
+ * 等待图片可用。
+ *
+ * `HTMLImageElement.decode()` 需要 Chromium 64；旧 WebView 上不存在。
+ * 回退到 onload/onerror。
+ */
+function decodeImageElement(img: HTMLImageElement): Promise<void> {
+  if (typeof img.decode === "function") {
+    return img.decode().catch(() => undefined);
+  }
+  return new Promise<void>((resolve) => {
+    if (img.complete && img.naturalWidth > 0) return resolve();
+    img.onload = () => resolve();
+    img.onerror = () => resolve();
+  });
+}
 
 /** 出于体积考虑，jsQR 在真正需要解码时才动态载入 */
 async function decodeImage(
@@ -13,7 +47,7 @@ async function decodeImage(
 ): Promise<string | null> {
   if (width < 8 || height < 8) return null;
   const canvas = document.createElement("canvas");
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const ctx = get2dContext(canvas);
   if (!ctx) return null;
 
   const { default: jsQR } = await import("jsqr");
@@ -46,7 +80,8 @@ async function decodeBlob(blob: Blob): Promise<string | null> {
   try {
     const img = new Image();
     img.src = url;
-    await img.decode();
+    // decode() 需要 Chromium 64，旧 WebView 上回退到 onload
+    await decodeImageElement(img);
     return await decodeImage(img, img.naturalWidth, img.naturalHeight);
   } catch {
     return null;
@@ -69,6 +104,10 @@ export function QrScanner({ onResult }: { onResult: (text: string) => void }) {
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // 旧 WebView 上 getDisplayMedia / clipboard.read 可能不存在。
+  // 按能力隐藏入口，而不是让按钮点了没反应。
+  const caps = useMemo(() => getClientCaps(), []);
+
   /** 命中结果：同一张码 2.5 秒内不重复触发 */
   const handleHit = useCallback(
     (text: string) => {
@@ -80,7 +119,19 @@ export function QrScanner({ onResult }: { onResult: (text: string) => void }) {
         return;
       }
       lastHitRef.current = { text, at: now };
-      onResult(text);
+      // onResult 会一路走到 parseOtpUri；畸形输入（如标签里带 `%`）历史上会抛
+      // URIError。这里兜住，绝不让异常逃逸出 DOM 事件回调或 rAF 循环。
+      try {
+        onResult(text);
+      } catch (err) {
+        // 失败就不占用 2.5 秒抑制窗口，让用户能立刻重试
+        lastHitRef.current = { text: "", at: 0 };
+        setHint(
+          err instanceof Error
+            ? `二维码内容无法解析：${err.message}`
+            : "二维码内容无法解析",
+        );
+      }
     },
     [onResult],
   );
@@ -171,6 +222,14 @@ export function QrScanner({ onResult }: { onResult: (text: string) => void }) {
         const text = await decodeBlob(blob);
         if (text) handleHit(text);
         else setHint("没有识别到二维码，换一张更清晰的图片试试。");
+      } catch (err) {
+        // 以前这里只有 finally：任何异常都会变成 unhandled rejection，
+        // 用户看到的是「点了没反应」。
+        setHint(
+          err instanceof Error
+            ? `图片处理失败：${err.message}`
+            : "图片处理失败，请换一张图片试试。",
+        );
       } finally {
         setBusy(false);
       }
@@ -303,29 +362,33 @@ export function QrScanner({ onResult }: { onResult: (text: string) => void }) {
         )}
       </div>
 
-      {/* 三个入口 */}
+      {/* 入口：按能力显示。旧 WebView 上不支持的直接隐藏，避免点了没反应 */}
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => void pasteFromClipboard()}
-          className="btn-outline flex-1"
-        >
-          <IconClipboard className="size-4" />
-          粘贴图片
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            status === "capturing" ? stopCapture() : void startCapture()
-          }
-          className={cn(
-            "btn-outline flex-1",
-            status === "capturing" && "btn-primary",
-          )}
-        >
-          <IconScreen className="size-4" />
-          {status === "capturing" ? "停止共享" : "截取屏幕"}
-        </button>
+        {caps.clipboardRead && (
+          <button
+            type="button"
+            onClick={() => void pasteFromClipboard()}
+            className="btn-outline flex-1"
+          >
+            <IconClipboard className="size-4" />
+            粘贴图片
+          </button>
+        )}
+        {caps.displayCapture && (
+          <button
+            type="button"
+            onClick={() =>
+              status === "capturing" ? stopCapture() : void startCapture()
+            }
+            className={cn(
+              "btn-outline flex-1",
+              status === "capturing" && "btn-primary",
+            )}
+          >
+            <IconScreen className="size-4" />
+            {status === "capturing" ? "停止共享" : "截取屏幕"}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
@@ -346,6 +409,22 @@ export function QrScanner({ onResult }: { onResult: (text: string) => void }) {
           }}
         />
       </div>
+
+      {/* 能力不足时说明可用的替代方式 */}
+      {(!caps.clipboardRead || !caps.displayCapture) && (
+        <p className="text-xs leading-relaxed text-slate-400 dark:text-slate-500">
+          当前浏览器版本较旧
+          {!caps.displayCapture && "，不支持截取屏幕"}
+          {!caps.clipboardRead && "，不支持直接读取剪贴板"}
+          。请改用
+          <span className="mx-0.5 font-medium">选择图片</span>
+          或直接按{" "}
+          <kbd className="rounded border border-slate-200 px-1 dark:border-slate-700">
+            Ctrl/⌘ V
+          </kbd>{" "}
+          粘贴截图。
+        </p>
+      )}
 
       {hint && (
         <p className="text-xs text-slate-400 dark:text-slate-500">{hint}</p>

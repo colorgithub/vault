@@ -1,10 +1,10 @@
 "use client";
 
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 
 import { IconCheck, IconCopy, IconPencil, IconTrash } from "@/components/Icons";
 import { toast } from "@/components/Toast";
-import { cn, copyText, initialsOf } from "@/lib/client";
+import { cn, copyText, hasWebCrypto, initialsOf } from "@/lib/client";
 import { clampPeriod, formatCode, generateTotp } from "@/lib/totp";
 import type { TotpAccount } from "@/lib/types";
 
@@ -26,8 +26,15 @@ export const TotpCard = memo(function TotpCard({
 
   const [code, setCode] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // Web Crypto 只在安全上下文（HTTPS / localhost）可用；不可用时给出明确原因，
+  // 而不是笼统的「密钥无法生成验证码」，让用户不知道是自己配错了还是环境问题。
+  const cryptoAvailable = useMemo(() => hasWebCrypto(), []);
 
   useEffect(() => {
+    if (!cryptoAvailable) {
+      setCode("UNSUPPORTED");
+      return;
+    }
     let alive = true;
     generateTotp(
       {
@@ -47,14 +54,22 @@ export const TotpCard = memo(function TotpCard({
     return () => {
       alive = false;
     };
-  }, [counter, windowMs, account.secret, account.algorithm, account.digits, period]);
+  }, [
+    counter,
+    windowMs,
+    account.secret,
+    account.algorithm,
+    account.digits,
+    period,
+    cryptoAvailable,
+  ]);
 
   const seconds = Math.ceil(remainingMs / 1000);
   const fraction = Math.max(0, Math.min(1, remainingMs / windowMs));
   const urgent = remainingMs <= 5000;
 
   async function handleCopy() {
-    if (!code || code === "ERROR") return;
+    if (!code || code === "ERROR" || code === "UNSUPPORTED") return;
     const ok = await copyText(code);
     if (ok) {
       setCopied(true);
@@ -120,6 +135,10 @@ export const TotpCard = memo(function TotpCard({
               aria-label="正在计算验证码"
               className="inline-block h-[26px] w-[7.5ch] animate-pulse rounded bg-slate-100 align-middle dark:bg-slate-800"
             />
+          ) : code === "UNSUPPORTED" ? (
+            <span className="text-xs font-normal leading-snug text-amber-600 dark:text-amber-500">
+              需要 HTTPS 或 localhost 才能计算验证码
+            </span>
           ) : code === "ERROR" ? (
             <span className="text-sm font-normal text-rose-500">
               密钥无法生成验证码

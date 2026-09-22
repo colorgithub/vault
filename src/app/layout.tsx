@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
 
 import "./globals.css";
+import { PolyfillScript } from "@/components/PolyfillScript";
 import { ThemeScript } from "@/components/ThemeScript";
+import { UnsupportedBrowserNotice } from "@/components/UnsupportedBrowserNotice";
 
 const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME || "MemoVault";
 
@@ -34,9 +36,14 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" suppressHydrationWarning>
       <head>
+        {/* polyfill 必须最先执行，早于任何 bundle */}
+        <PolyfillScript />
         <ThemeScript />
       </head>
-      <body className="min-h-dvh">{children}</body>
+      <body className="min-h-dvh">
+        <UnsupportedBrowserNotice />
+        {children}
+      </body>
     </html>
   );
 }

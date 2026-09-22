@@ -1,12 +1,11 @@
 import { and, eq } from "drizzle-orm";
 
-import { ApiError, fail, handler, ok, readJson, requireUser, str } from "@/lib/api";
+import { ApiError, fail, handler, ok, optionalInt, readJson, requireUser, str } from "@/lib/api";
 import { db } from "@/lib/db";
 import { totpAccounts } from "@/lib/db/schema";
 import {
-  clampDigits,
-  clampPeriod,
   isValidBase32,
+  MIN_SECRET_LENGTH,
   normalizeAlgorithm,
   normalizeBase32,
 } from "@/lib/totp";
@@ -30,12 +29,17 @@ export const PATCH = handler<Ctx>(async (req, ctx) => {
   if (body.note !== undefined) patch.note = str(body.note).slice(0, 500);
   if (body.algorithm !== undefined)
     patch.algorithm = normalizeAlgorithm(str(body.algorithm));
-  if (body.digits !== undefined) patch.digits = clampDigits(Number(body.digits));
-  if (body.period !== undefined) patch.period = clampPeriod(Number(body.period));
+  // 非法值直接报错，不再静默替换成默认值（digits=99 曾会变成 6）
+  const digits = optionalInt(body.digits, "验证码位数", 4, 10);
+  if (digits !== undefined) patch.digits = digits;
+  const period = optionalInt(body.period, "刷新周期", 5, 300);
+  if (period !== undefined) patch.period = period;
   if (body.secret !== undefined) {
     const secret = normalizeBase32(str(body.secret));
     if (!isValidBase32(secret))
-      throw new ApiError("密钥无效，应为至少 16 位的 Base32 字符串");
+      throw new ApiError(
+        `密钥无效，应为至少 ${MIN_SECRET_LENGTH} 位的 Base32 字符串`,
+      );
     patch.secret = secret;
   }
 

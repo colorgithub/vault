@@ -1,7 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
-import { ApiError, handler, ok, readJson, requireUser, str } from "@/lib/api";
+import { ApiError, handler, ok, optionalInt, readJson, requireUser, str } from "@/lib/api";
 import { db } from "@/lib/db";
 import { totpAccounts } from "@/lib/db/schema";
 import {
@@ -9,9 +9,11 @@ import {
   clampPeriod,
   generateTotp,
   isValidBase32,
+  MIN_SECRET_LENGTH,
   normalizeAlgorithm,
   normalizeBase32,
   parseOtpUri,
+  parseOtpUriDetailed,
 } from "@/lib/totp";
 
 export const dynamic = "force-dynamic";
@@ -29,19 +31,26 @@ export interface AccountInput {
 function buildInput(raw: Record<string, unknown>): AccountInput {
   const secret = normalizeBase32(str(raw.secret));
   if (!isValidBase32(secret))
-    throw new ApiError("密钥无效，应为至少 16 位的 Base32 字符串");
+    throw new ApiError(
+      `密钥无效，应为至少 ${MIN_SECRET_LENGTH} 位的 Base32 字符串`,
+    );
 
   const issuer = str(raw.issuer).trim().slice(0, 80);
   const accountName =
     str(raw.accountName).trim().slice(0, 120) || issuer || "未命名账户";
+
+  // 只在「确实提供了非法值」时报错，缺省则用默认值。
+  // 以前是静默 clamp：客户端传 digits=99 会悄悄变成 6，前端以为设置生效了。
+  const digits = optionalInt(raw.digits, "验证码位数", 4, 10) ?? clampDigits(6);
+  const period = optionalInt(raw.period, "刷新周期", 5, 300) ?? clampPeriod(30);
 
   return {
     issuer,
     accountName,
     secret,
     algorithm: normalizeAlgorithm(str(raw.algorithm, "SHA1")),
-    digits: clampDigits(Number(raw.digits ?? 6)),
-    period: clampPeriod(Number(raw.period ?? 30)),
+    digits,
+    period,
     note: str(raw.note).slice(0, 500),
   };
 }
@@ -69,12 +78,10 @@ export const POST = handler(async (req: Request) => {
   let inputs: AccountInput[] = [];
 
   if (typeof body.uri === "string") {
-    const parsed = parseOtpUri(body.uri);
-    if (parsed.length === 0)
-      throw new ApiError("无法识别该二维码内容，请确认是 otpauth:// 链接");
-    inputs = parsed.map((p) =>
-      buildInput({ ...p, note: str(body.note) }),
-    );
+    const { accounts, error } = parseOtpUriDetailed(body.uri);
+    if (accounts.length === 0)
+      throw new ApiError(error ?? "无法识别该二维码内容，请确认是 otpauth:// 链接");
+    inputs = accounts.map((p) => buildInput({ ...p, note: str(body.note) }));
   } else if (Array.isArray(body.accounts)) {
     inputs = body.accounts.map((item) =>
       buildInput((item ?? {}) as Record<string, unknown>),

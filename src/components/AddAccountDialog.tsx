@@ -6,21 +6,22 @@ import { IconRefresh, IconSparkle } from "@/components/Icons";
 import { Modal } from "@/components/Modal";
 import { QrScanner } from "@/components/QrScanner";
 import { toast } from "@/components/Toast";
+import { NumberField } from "@/components/NumberField";
 import { apiFetch, cn } from "@/lib/client";
 import {
+  ALGORITHM_OPTIONS,
   buildOtpauthUri,
-  clampDigits,
-  clampPeriod,
+  DIGIT_OPTIONS,
   generateSecret,
   normalizeAlgorithm,
-  parseOtpUri,
+  parseOtpUriDetailed,
   type ParsedOtpAccount,
 } from "@/lib/totp";
 import type { TotpAccount } from "@/lib/types";
 
 type Tab = "scan" | "manual";
 
-const ALGORITHMS = ["SHA1", "SHA256", "SHA512"] as const;
+const ALGORITHMS = ALGORITHM_OPTIONS;
 
 export function AddAccountDialog({
   open,
@@ -69,9 +70,9 @@ export function AddAccountDialog({
   }
 
   function handleScanResult(text: string) {
-    const found = parseOtpUri(text);
+    const { accounts: found, error } = parseOtpUriDetailed(text);
     if (found.length === 0) {
-      toast("二维码内容不是有效的 2FA 链接", "error");
+      toast(error ?? "二维码内容不是有效的 2FA 链接", "error");
       return;
     }
     setScannedRaw(text);
@@ -309,9 +310,9 @@ export function AddAccountDialog({
                 <select
                   className="field py-2"
                   value={digits}
-                  onChange={(e) => setDigits(clampDigits(Number(e.target.value)))}
+                  onChange={(e) => setDigits(Number(e.target.value))}
                 >
-                  {[6, 7, 8].map((d) => (
+                  {DIGIT_OPTIONS.map((d) => (
                     <option key={d} value={d}>
                       {d} 位
                     </option>
@@ -322,13 +323,11 @@ export function AddAccountDialog({
                 <span className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">
                   刷新周期（秒）
                 </span>
-                <input
-                  type="number"
-                  className="field py-2"
+                <NumberField
                   value={period}
                   min={5}
                   max={300}
-                  onChange={(e) => setPeriod(clampPeriod(Number(e.target.value)))}
+                  onCommit={setPeriod}
                 />
               </label>
             </div>

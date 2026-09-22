@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   IconCheck,
+  IconClose,
   IconEye,
   IconMemo,
   IconPencil,
@@ -14,7 +15,12 @@ import {
 } from "@/components/Icons";
 import { toast } from "@/components/Toast";
 import { apiFetch, cn, relativeTime } from "@/lib/client";
-import { COLOR_STYLES, MEMO_COLORS, type MemoColor } from "@/lib/constants";
+import {
+  COLOR_STYLES,
+  MAX_MEMO_LENGTH,
+  MEMO_COLORS,
+  type MemoColor,
+} from "@/lib/constants";
 import type { Memo } from "@/lib/types";
 
 interface Draft {
@@ -24,6 +30,11 @@ interface Draft {
   color: MemoColor;
   pinned: boolean;
 }
+
+/** 参与「是否需要保存」判断的字段集合 */
+type MemoSnapshot = Pick<Draft, "title" | "content" | "color" | "pinned">;
+
+type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 function sortMemos(list: Memo[]): Memo[] {
   return [...list].sort((a, b) => {
@@ -35,14 +46,21 @@ function sortMemos(list: Memo[]): Memo[] {
 export function MemoWorkspace({
   memos,
   setMemos,
+  total,
+  onLoadMore,
+  loadingMore,
 }: {
   memos: Memo[];
   setMemos: React.Dispatch<React.SetStateAction<Memo[]>>;
+  /** 服务端总条数，用于提示还有多少条未加载 */
+  total?: number;
+  onLoadMore?: () => void;
+  loadingMore?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [status, setStatus] = useState<SaveStatus>("idle");
   const [creating, setCreating] = useState(false);
   const [preview, setPreview] = useState(false);
   const [html, setHtml] = useState("");
@@ -50,6 +68,17 @@ export function MemoWorkspace({
   const titleRef = useRef<HTMLInputElement>(null);
   const memosRef = useRef(memos);
   memosRef.current = memos;
+
+  /** 当前 draft 的实时引用，供事件回调与卸载清理读取（避免闭包过期） */
+  const draftRef = useRef<Draft | null>(null);
+  draftRef.current = draft;
+
+  /** 最近一次成功写入服务端的内容（每个 memo 一份），用于避免重复写入 */
+  const writtenRef = useRef<Map<string, MemoSnapshot>>(new Map());
+  /** persist 的实时引用，供 selectMemo / 卸载清理调用 */
+  const persistRef = useRef<(next: Draft) => Promise<void>>(async () => {});
+  /** 已被删除的 memo id，避免对已删除记录继续发 PATCH */
+  const deletedRef = useRef<Set<string>>(new Set());
 
   /* ------------------------------ 过滤 ------------------------------ */
   // 正在编辑的内容直接覆盖到列表上，这样打字时左侧标题/摘要会实时跟着变，
@@ -82,6 +111,12 @@ export function MemoWorkspace({
   /* --------------------------- 选中备忘录 --------------------------- */
   const selectMemo = useCallback(
     (memo: Memo) => {
+      // 切走之前先把上一条未落盘的改动补存，否则 700ms 防抖会被 cleanup 取消，
+      // 编辑内容静默丢失。
+      const previous = draftRef.current;
+      if (previous && previous.id !== memo.id) {
+        void persistRef.current(previous);
+      }
       setPreview(false);
       setSelectedId(memo.id);
       setDraft({
@@ -105,49 +140,112 @@ export function MemoWorkspace({
   }, [memos, selectedId, selectMemo]);
 
   /* ----------------------------- 自动保存 ---------------------------- */
-  const persist = useCallback(
-    async (next: Draft) => {
-      const original = memosRef.current.find((m) => m.id === next.id);
-      if (!original) return;
-      const unchanged =
-        original.title === next.title &&
-        original.content === next.content &&
-        original.color === next.color &&
-        original.pinned === next.pinned;
-      if (unchanged) {
-        setStatus("saved");
-        return;
-      }
 
-      setStatus("saving");
-      try {
-        const res = await apiFetch<{ memo: Memo }>(`/api/memos/${next.id}`, {
-          method: "PATCH",
-          json: {
-            title: next.title,
-            content: next.content,
-            color: next.color,
-            pinned: next.pinned,
-          },
-        });
-        const saved = res.memo;
-        setMemos((prev) =>
-          sortMemos(prev.map((m) => (m.id === saved.id ? saved : m))),
-        );
-        setStatus("saved");
-      } catch (err) {
-        setStatus("idle");
-        toast(err instanceof Error ? err.message : "保存失败", "error");
+  /**
+   * 每条备忘录一个「合并写入」队列。
+   *
+   * 之前的实现有两个互相纠缠的缺陷：
+   *   1. 用「已确认落盘」的内容当比较基线。请求在途时基线是旧的，用户把内容改回
+   *      原值就会被误判成「未变化」而跳过 —— 而服务端其实会先落盘中间那个值，
+   *      结果最终内容永远写不进去。
+   *   2. 允许同一 memo 的多个 PATCH 并发，响应乱序时旧内容会盖掉新内容。
+   *
+   * 这里改成：把「用户最新想要的内容」记在 desired 里，同一 memo 同时只跑一条写入
+   * 循环；每次写完再回头看 desired 是否又变了，变了就继续写。既不会丢最终值，
+   * 也不存在并发请求，乱序覆盖自然消失。
+   */
+  const desiredRef = useRef<Map<string, MemoSnapshot>>(new Map());
+  const inflightRef = useRef<Map<string, Promise<void>>>(new Map());
+
+  const sameSnapshot = (a: MemoSnapshot | undefined, b: MemoSnapshot) =>
+    !!a &&
+    a.title === b.title &&
+    a.content === b.content &&
+    a.color === b.color &&
+    a.pinned === b.pinned;
+
+  const persist = useCallback(async (next: Draft) => {
+    if (deletedRef.current.has(next.id)) return;
+
+    const snapshot: MemoSnapshot = {
+      title: next.title,
+      content: next.content,
+      color: next.color,
+      pinned: next.pinned,
+    };
+    desiredRef.current.set(next.id, snapshot);
+
+    // 已有写入循环在跑：它会自己发现 desired 变了，这里直接返回
+    const running = inflightRef.current.get(next.id);
+    if (running) return running;
+
+    const id = next.id;
+    const loop = (async () => {
+      let failed = false;
+      for (;;) {
+        const target = desiredRef.current.get(id);
+        if (!target || deletedRef.current.has(id)) break;
+        // 目标内容已经写过了，收工
+        if (sameSnapshot(writtenRef.current.get(id), target)) break;
+
+        setStatus("saving");
+        try {
+          const res = await apiFetch<{ memo: Memo }>(`/api/memos/${id}`, {
+            method: "PATCH",
+            json: target,
+          });
+          // 同一 memo 同时只有一条写入循环，响应不可能乱序，可以安全回写列表
+          const saved = res.memo;
+          setMemos((prev) =>
+            sortMemos(prev.map((m) => (m.id === saved.id ? saved : m))),
+          );
+        } catch (err) {
+          // 保存失败必须显示为失败，不能继续挂「已保存」的对勾。
+          // 清掉 desired，让下一次编辑能重新发起写入（而不是被当成「已写过」）。
+          failed = true;
+          setStatus("error");
+          toast(err instanceof Error ? err.message : "保存失败", "error");
+          desiredRef.current.delete(id);
+          break;
+        }
+        writtenRef.current.set(id, target);
+
+        // 写入期间用户又改了内容，就继续下一轮；否则收工
+        if (sameSnapshot(desiredRef.current.get(id), target)) {
+          desiredRef.current.delete(id);
+          break;
+        }
       }
-    },
-    [setMemos],
-  );
+      inflightRef.current.delete(id);
+      // 失败时保留错误状态，别让收尾逻辑把「保存失败」又盖成「已保存」
+      if (!failed && !deletedRef.current.has(id)) setStatus("saved");
+    })();
+
+    inflightRef.current.set(id, loop);
+    return loop;
+  }, []);
+
+  persistRef.current = persist;
 
   useEffect(() => {
     if (!draft) return;
     const timer = setTimeout(() => void persist(draft), 700);
     return () => clearTimeout(timer);
   }, [draft, persist]);
+
+  /**
+   * 卸载时把未落盘的改动补存一次。
+   *
+   * 这是「切到验证器标签页 → MemoWorkspace 被卸载 → 700ms 防抖被 clearTimeout」
+   * 这条静默丢数据路径的兜底。卸载时 effect cleanup 拿不到最新的 draft，
+   * 所以走 ref。
+   */
+  useEffect(() => {
+    return () => {
+      const pending = draftRef.current;
+      if (pending) void persistRef.current(pending);
+    };
+  }, []);
 
   // 离开页面前尽量把未落盘的内容存下
   useEffect(() => {
@@ -184,6 +282,10 @@ export function MemoWorkspace({
     if (!window.confirm("确定要删除这条备忘录吗？该操作不可撤销。")) return;
     try {
       await apiFetch(`/api/memos/${id}`, { method: "DELETE" });
+      // 标记为已删除，避免在途 / 待触发的自动保存对着已删除的记录发 PATCH（会拿到 404）
+      deletedRef.current.add(id);
+      desiredRef.current.delete(id);
+      writtenRef.current.delete(id);
       setMemos((prev) => prev.filter((m) => m.id !== id));
       if (selectedId === id) {
         setSelectedId(null);
@@ -221,6 +323,8 @@ export function MemoWorkspace({
   }, [preview, draft]);
 
   const isEmpty = memos.length === 0;
+  const remaining = (total ?? memos.length) - memos.length;
+  const hasMore = remaining > 0;
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -314,6 +418,22 @@ export function MemoWorkspace({
               })}
             </ul>
           )}
+
+          {/* 分页：超过单页上限时给出明确入口，而不是让多余的数据无声消失 */}
+          {hasMore && onLoadMore && (
+            <div className="px-1 pb-1 pt-3">
+              <button
+                type="button"
+                onClick={onLoadMore}
+                disabled={loadingMore}
+                className="btn-outline w-full py-2 text-xs"
+              >
+                {loadingMore
+                  ? "加载中…"
+                  : `加载更多（还有 ${Math.max(0, remaining)} 条）`}
+              </button>
+            </div>
+          )}
         </div>
       </section>
 
@@ -349,17 +469,27 @@ export function MemoWorkspace({
                 ← 返回
               </button>
 
-              <span className="ml-1 hidden items-center gap-1.5 text-xs text-slate-400 sm:inline-flex dark:text-slate-500">
+              <span className="ml-1 hidden items-center gap-1.5 text-xs sm:inline-flex">
                 {status === "saving" ? (
-                  <>
+                  <span className="flex items-center gap-1.5 text-slate-400 dark:text-slate-500">
                     <span className="size-3 animate-spin rounded-full border-[1.5px] border-slate-300 border-t-slate-500 dark:border-slate-700 dark:border-t-slate-400" />
                     保存中
-                  </>
-                ) : (
-                  <>
+                  </span>
+                ) : status === "error" ? (
+                  <span className="flex items-center gap-1.5 text-rose-500">
+                    <IconClose className="size-3.5" />
+                    保存失败
+                  </span>
+                ) : status === "saved" ? (
+                  <span className="flex items-center gap-1.5 text-slate-400 dark:text-slate-500">
                     <IconCheck className="size-3.5" />
                     已保存
-                  </>
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5 text-slate-300 dark:text-slate-600">
+                    <IconPencil className="size-3.5" />
+                    未修改
+                  </span>
                 )}
               </span>
 
@@ -464,6 +594,7 @@ export function MemoWorkspace({
                       setDraft((d) => (d ? { ...d, content: e.target.value } : d))
                     }
                     placeholder={"开始记录…\n\n支持 Markdown 语法，点右上角眼睛图标可预览。"}
+                    maxLength={MAX_MEMO_LENGTH}
                     className="min-h-[52vh] w-full resize-none border-0 bg-transparent p-0 text-[15px] leading-7 outline-none placeholder:text-slate-300 dark:placeholder:text-slate-600"
                     spellCheck={false}
                   />

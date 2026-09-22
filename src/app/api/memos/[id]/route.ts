@@ -55,6 +55,13 @@ export const PATCH = handler<Ctx>(async (req, ctx) => {
   }
   if (body.pinned !== undefined) patch.pinned = body.pinned === true;
 
+  // 与 POST 保持一致：不允许把标题和内容同时清空。否则用户清空两个输入框后，
+  // 会留下一条空备忘录，而同样的状态用 POST 是建不出来的。
+  const nextTitle = patch.title ?? existing.title;
+  const nextContent = patch.content ?? existing.content;
+  if (!nextTitle.trim() && !nextContent.trim())
+    throw new ApiError("标题和内容不能同时为空");
+
   const [row] = await db
     .update(memos)
     .set(patch)

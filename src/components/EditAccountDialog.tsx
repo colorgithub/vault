@@ -3,12 +3,19 @@
 import { useEffect, useState } from "react";
 
 import { Modal } from "@/components/Modal";
+import { NumberField } from "@/components/NumberField";
 import { toast } from "@/components/Toast";
 import { apiFetch } from "@/lib/client";
-import { clampDigits, clampPeriod, normalizeAlgorithm } from "@/lib/totp";
+import {
+  ALGORITHM_OPTIONS,
+  clampDigits,
+  clampPeriod,
+  DIGIT_OPTIONS,
+  normalizeAlgorithm,
+} from "@/lib/totp";
 import type { TotpAccount } from "@/lib/types";
 
-const ALGORITHMS = ["SHA1", "SHA256", "SHA512"] as const;
+const ALGORITHMS = ALGORITHM_OPTIONS;
 
 export function EditAccountDialog({
   account,
@@ -140,9 +147,9 @@ export function EditAccountDialog({
             <select
               className="field py-2"
               value={digits}
-              onChange={(e) => setDigits(clampDigits(Number(e.target.value)))}
+              onChange={(e) => setDigits(Number(e.target.value))}
             >
-              {[6, 7, 8].map((d) => (
+              {DIGIT_OPTIONS.map((d) => (
                 <option key={d} value={d}>
                   {d} 位
                 </option>
@@ -153,14 +160,7 @@ export function EditAccountDialog({
             <span className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">
               周期（秒）
             </span>
-            <input
-              type="number"
-              className="field py-2"
-              min={5}
-              max={300}
-              value={period}
-              onChange={(e) => setPeriod(clampPeriod(Number(e.target.value)))}
-            />
+            <NumberField value={period} min={5} max={300} onCommit={setPeriod} />
           </label>
         </div>
 

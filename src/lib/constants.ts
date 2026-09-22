@@ -33,3 +33,12 @@ export const COLOR_STYLES: Record<MemoColor, { dot: string }> = {
 
 export const MAX_MEMO_LENGTH = 100_000;
 export const MAX_TITLE_LENGTH = 200;
+
+/**
+ * 备忘录列表分页参数。
+ *
+ * 放在这里而不是路由文件里：Next.js 的 route.ts 只允许导出 HTTP 方法等固定名称，
+ * 多导出一个常量会让生成的类型校验失败。
+ */
+export const DEFAULT_MEMO_LIMIT = 300;
+export const MAX_MEMO_LIMIT = 500;

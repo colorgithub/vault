@@ -10,10 +10,13 @@
 
 ### 1. 备忘录：新建 / 保存 / 修改
 - 新建、编辑、删除、置顶，7 种颜色标签
-- **输入即自动保存**（700ms 防抖），右上角实时显示「保存中 / 已保存」
+- **输入即自动保存**（700ms 防抖），右上角实时显示「保存中 / 已保存 / 保存失败」
+- 保存按备忘录串行化：同一 memo 同时只有一条写入在途，内容变化会自动合并重发，
+  不会出现旧响应盖掉新内容，也不会漏掉「改回原值」这类编辑
+- 切换备忘录 / 切换标签页 / 关闭页面时都会补存未落盘的改动
 - 全文搜索（标题 + 内容）
 - 支持 **Markdown 预览**，渲染结果经 DOMPurify 消毒，防 XSS
-- 切换标签页 / 关闭页面时自动补存未落盘的改动
+- 列表分页：超过单页上限时显示「加载更多」，导出备份会取全量数据
 - 移动端两栏自适应：列表 ⇄ 编辑页
 
 ### 2. 2FA 验证码：实时显示 + 图片识别新建
@@ -26,8 +29,11 @@
   - **选择 / 拖拽图片**：本地图片文件或直接拖进虚线框
   - 支持 `otpauth://totp/...` 标准链接，也接受直接粘贴链接文本
   - **支持 Google Authenticator 的 `otpauth-migration://` 批量导出码**，一次导入多个账户
-- 手动录入，带高级设置（算法 SHA1/SHA256/SHA512、位数、周期），可随机生成密钥
+  - 迁移码里 base64 的 `+` 无论是否做了百分号编码都能正确解析
+  - 识别失败会给出具体原因（而不是笼统的「二维码无效」），且不会抛异常中断界面
+- 手动录入，带高级设置（算法 SHA1/SHA256/SHA512、位数 4-10、周期 5-300），可随机生成密钥
 - 显示等价的 `otpauth://` 链接，方便迁移到其它验证器
+- 在非安全上下文（局域网 http://）下会明确提示「需要 HTTPS 或 localhost」，而不是静默失效
 
 ### 3. 账号体系
 - 邮箱 + 密码注册 / 登录 / 登出
@@ -35,12 +41,23 @@
 - 会话使用 **JWT（HS256）+ httpOnly Cookie**，有效期 7 天
 - **多账号数据严格隔离**：所有数据库查询都带 `user_id` 条件，跨账号访问一律 404
 - 登录接口对不存在的邮箱也执行一次哈希运算，避免通过响应时间枚举账号
+- 登出与读取当前用户不依赖数据库，数据库不可用时依然能正常登出
+- 服务端错误只返回通用文案，不会把驱动的原始报错（可能含数据库连接串）回显给客户端
 
 ### 4. 界面与其它
 - **克制的单色设计**：无渐变、无光晕、无毛玻璃，只有一个强调色用于焦点与选中态
 - 深色 / 浅色主题，跟随系统并可手动切换（无闪白）
 - 一键导出 JSON 备份
 - Toast 通知、空状态、加载态、响应式布局
+
+### 5. 兼容性：低版本 Android WebView
+- 目标 **Chrome / Android System WebView 61+**（硬下限 49，见下文）
+- Tailwind v4 输出的 `@layer` / `oklch()` / `:where()` / `dvh` / `translate` 全部在
+  构建期降级，旧 WebView 上不会出现「完全没样式」
+- `flex gap` 在 `@supports not (gap: 0px)` 下用子元素 margin 回退（Chromium < 84）
+- 运行时 polyfill 以 ES5 内联脚本注入，早于所有 bundle 执行
+- 按能力降级：不支持截屏 / 读剪贴板的浏览器会隐藏对应入口并给出替代方式
+- 低于硬下限时显示可读的升级提示，而不是白屏
 
 ---
 
@@ -206,11 +223,19 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5432/memovault"
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `GET` | `/api/memos?q=关键词` | 列出（标题降序 / 置顶优先） |
+| `GET` | `/api/memos?q=关键词&limit=300&offset=0` | 分页列出（置顶优先 / 更新时间降序） |
 | `POST` | `/api/memos` | 新建 `{ title, content, color, pinned }` |
 | `GET` | `/api/memos/:id` | 单条详情 |
 | `PATCH` | `/api/memos/:id` | 局部更新（字段都可选） |
 | `DELETE` | `/api/memos/:id` | 删除 |
+
+`GET /api/memos` 返回分页信息，前端据此决定是否显示「加载更多」：
+
+```jsonc
+{ "memos": [ /* ... */ ], "total": 812, "limit": 300, "offset": 0, "hasMore": true }
+```
+
+`limit` 上限 500，默认 300。`POST` 与 `PATCH` 都不允许把标题和内容同时清空。
 
 ### 2FA `/api/totp`
 
@@ -240,9 +265,13 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5432/memovault"
 ## 🗂 项目结构
 
 ```
+postcss.config.mjs              # PostCSS 降级链（低版本 WebView 适配）
+postcss-android-webview.cjs     # 自定义插件：:where/:is、dvh、translate、flex gap
+next.config.ts                  # 安全响应头
+drizzle.config.ts               # Drizzle Kit 配置
 src/
 ├── app/
-│   ├── layout.tsx              # 根布局 + 主题脚本（防闪白）
+│   ├── layout.tsx              # 根布局 + polyfill / 主题脚本（防闪白）
 │   ├── page.tsx                # 落地页
 │   ├── login/ register/        # 登录 / 注册
 │   ├── vault/                  # 主应用（需登录）
@@ -260,19 +289,93 @@ src/
 │   ├── AddAccountDialog.tsx    # 添加账户（图片识别 / 手动）
 │   ├── EditAccountDialog.tsx   # 编辑账户
 │   ├── QrScanner.tsx           # 二维码识别（粘贴 / 屏幕捕获 / 图片）
+│   ├── NumberField.tsx         # 数字输入（允许逐字符键入，失焦才回退）
+│   ├── PolyfillScript.tsx      # 内联注入 ES5 polyfill（早于所有 bundle）
+│   ├── UnsupportedBrowserNotice.tsx  # 低于兼容下限时的提示
 │   ├── AuthForm.tsx AuthShell.tsx Modal.tsx Toast.tsx Icons.tsx
 └── lib/
     ├── auth.ts                 # PBKDF2 哈希 + JWT 会话
     ├── totp.ts                 # TOTP / Base32 / otpauth URI / 迁移码解析
-    ├── api.ts                  # 路由包装、统一错误处理
-    ├── client.ts               # fetch 封装、hooks、工具函数
-    ├── constants.ts            # 颜色与长度限制
+    ├── api.ts                  # 路由包装、统一错误处理、请求体校验
+    ├── client.ts               # fetch 封装、hooks、能力探测、工具函数
+    ├── polyfills.ts            # 旧 WebView 运行时 polyfill（ES5）
+    ├── constants.ts            # 颜色、长度限制与分页参数
     ├── types.ts
     └── db/
         ├── schema.ts           # Drizzle 表定义
         ├── bootstrap-sql.ts    # 幂等建表语句
         └── index.ts            # 连接池 + ensureSchema()
 ```
+
+---
+
+## 📱 低版本 Android WebView 适配
+
+### 支持范围
+
+| 项目 | 版本 |
+| --- | --- |
+| 目标 | Chrome / Android System WebView **61+** |
+| 硬下限 | **49**（低于此版本 otpauth 解析与 TOTP 无法工作） |
+| browserslist | `chrome >= 61`、`and_chr >= 61`、`android >= 5` |
+
+硬下限由 API 决定：`URLSearchParams`（otpauth 解析）需要 Chrome 49，
+`crypto.subtle`（算码）需要 37/41，`requestAnimationFrame` 需要 22。
+
+### 设备对照
+
+| Android | 原生 WebView | 是否达标 |
+| --- | --- | --- |
+| 5.0 – 8.0 | Chrome 37 – 58 | 需升级 WebView |
+| 9.0 | Chrome 66 | ✅ |
+| 10+ | Chrome 74+ | ✅ |
+
+Android 5.0 起 WebView 可通过 Play 商店独立更新；停留在系统版本的国产 ROM 是主要目标场景。
+
+### 构建期降级（`postcss.config.mjs` + `postcss-android-webview.cjs`）
+
+| 特性 | 需要 | 不处理会怎样 | 处理方式 |
+| --- | --- | --- | --- |
+| `@layer` | Chrome 99 | **整个块被丢弃 → 页面完全没样式** | 展开为普通规则 |
+| `oklch()` | Chrome 111 | 颜色声明整条失效 | 转为 `rgb()` |
+| `:where()` / `:is()` | Chrome 88 | 选择器非法 → 整条规则丢弃 | 展开为平铺选择器 |
+| `dvh` 单位 | Chrome 108 | 全屏面板高度塌陷 | 补 `vh` 回退声明 |
+| `translate:` 属性 | Chrome 104 | 居中 / 偏移丢失 | 改写为 `transform` |
+| `flex gap` | Chrome 84 | flex 间距全部塌掉 | `@supports not (gap:0px)` 下用 margin 回退 |
+
+厂商前缀由 `autoprefixer` 按 browserslist 自动补齐。
+
+### 运行时 polyfill
+
+`src/lib/polyfills.ts` 以 **ES5 内联脚本**注入 `<head>`，早于所有 bundle：
+
+- `globalThis`(71)、`Object.fromEntries`(73)、`Promise.allSettled`(76)
+- `Promise.any`(85)、`Array.prototype.at`(92)、`flat`/`flatMap`(69)
+- `String.prototype.replaceAll`(85)、`Object.hasOwn`(93)、`findLast`/`findLastIndex`(97)
+
+脚本本身必须是 ES5 —— 否则旧引擎连 polyfill 都解析不了。
+
+另外，应用代码已不使用 `Promise.allSettled`（改用 `settleAll`，见 `src/lib/client.ts`），
+避免为一个 API 把兼容下限从 61 抬到 76。
+
+### 能力降级
+
+`src/lib/client.ts` 的 `getClientCaps()` 读取启动时写入的能力标记：
+
+- 无 `getDisplayMedia`（Chrome 72）→ 隐藏「截取屏幕」
+- 无 `clipboard.read`（Chrome 76）→ 隐藏「粘贴图片」，保留 Ctrl+V 与选图
+- 无 `crypto.subtle`（非 HTTPS）→ 验证码卡片提示「需要 HTTPS 或 localhost」
+- 低于硬下限 → `UnsupportedBrowserNotice` 显示升级提示
+
+### 本地验证
+
+```bash
+npm run build
+# 检查构建产物里是否还有现代特性
+node -e "const fs=require('fs');const d='.next/static/css';const f=fs.readdirSync(d)[0];const c=fs.readFileSync(d+'/'+f,'utf8');for(const p of ['@layer','oklch(',':where(',':is(','translate:']){console.log(p,(c.match(new RegExp(p.replace(/[()]/g,'\\\\$&'),'g'))||[]).length)}"
+```
+
+预期输出全部为 `0`（`translate:` 与 `:where(`/`:is(`/`@layer`/`oklch(`）。
 
 ---
 
