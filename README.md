@@ -59,6 +59,94 @@
 - 按能力降级：不支持截屏 / 读剪贴板的浏览器会隐藏对应入口并给出替代方式
 - 低于硬下限时显示可读的升级提示，而不是白屏
 
+### 6. OAuth 2.0 授权服务器
+- 可作为其它自建站点的统一登录入口（Authorization Code + PKCE）
+- 授权只交出邮箱与昵称，**不授予**备忘录 / 验证码的访问权限
+- 详见下方 [OAuth 2.0 授权服务器](#-oauth-20-授权服务器) 一节
+
+---
+
+## 🔑 OAuth 2.0 授权服务器
+
+除了自己登录，MemoVault 还可以作为 **OAuth 2.0 授权服务器**，让其它自建站点（例如博客）
+用「MemoVault 账号登录」，这样你只需要记住一套密码，其它站点也不必再存密码哈希。
+
+实现的是 **Authorization Code + PKCE(S256)**，即当前公共客户端的标准做法。
+刻意不声明 `openid`：本实现是 OAuth 2.0 + userinfo，不签发 `id_token`，
+不假装自己是完整的 OIDC Provider。
+
+### 配置
+
+在环境变量里注册客户端（JSON 数组，支持多个）：
+
+```bash
+OAUTH_CLIENTS='[{
+  "clientId": "my-blog",
+  "clientSecret": "用下面命令生成",
+  "name": "我的博客",
+  "redirectUris": ["https://blog.example.com/api/auth/oauth/callback"]
+}]'
+
+# 对外 issuer，建议显式配置，避免从不同域名访问时不一致
+OAUTH_ISSUER="https://vault.example.com"
+```
+
+生成 `clientSecret`：
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+```
+
+`redirectUris` 必须**精确匹配**，不支持通配。客户端侧填什么，这里就写什么，一字不差。
+
+### 端点
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/oauth/authorize` | 授权页。未登录会先跳 `/login?next=...`，登录后回到这里 |
+| `POST` | `/api/oauth/authorize` | 用户在授权页点「允许 / 拒绝」后提交 |
+| `POST` | `/api/oauth/token` | 用授权码换 `access_token` |
+| `GET` | `/api/oauth/userinfo` | 用 Bearer 令牌取 `{ sub, email, name }` |
+
+`/api/oauth/token` 的请求体是标准的 `application/x-www-form-urlencoded`：
+
+```
+grant_type=authorization_code
+code=<授权码>
+redirect_uri=<与授权时一致>
+client_id=<clientId>
+client_secret=<clientSecret>
+code_verifier=<PKCE verifier>
+```
+
+响应：
+
+```json
+{ "access_token": "...", "token_type": "Bearer", "expires_in": 3600, "scope": "profile email" }
+```
+
+`/api/oauth/userinfo` 返回：
+
+```json
+{ "sub": "<vault 用户 id>", "email": "...", "email_verified": true,
+  "name": "...", "preferred_username": "...", "scope": "profile email" }
+```
+
+### 安全设计
+
+- 授权码 **60 秒过期、一次性使用**，库里只存 SHA-256 哈希
+- 访问令牌同样**只存哈希**，即使数据库泄露也拿不到可用令牌
+- **强制 PKCE S256**，拒绝 `plain`，避免授权码被拦截后直接可用
+- `redirect_uri` 必须与登记值完全相同；不合法时**绝不重定向**（否则就是开放重定向），只在页面上报错
+- 授权码消费用 `WHERE consumed_at IS NULL` 做原子更新，并发重放只有一个能成功
+- `client_secret` 与 `state` 都用恒定时间比较
+- 用户点「允许」后，服务端会把表单字段**全部重新校验一遍**——授权页的隐藏域用户可随意改
+
+### 权限边界
+
+授权只交出**邮箱与昵称**。`access_token` 的作用域是 `profile email`，
+**不能**读写备忘录或验证码——那些接口仍然只认 MemoVault 自己的会话 Cookie。
+
 ---
 
 ## 🚀 部署到 Vercel
@@ -89,6 +177,8 @@
 | `AUTH_SECRET` | ✅ | 会话签名密钥，长度 ≥ 16 的随机字符串。**必须手动添加** |
 | `DATABASE_URL` | ⬜ | 上一步由 Vercel 自动注入，通常不用管 |
 | `NEXT_PUBLIC_APP_NAME` | ⬜ | 站点名称，默认 `MemoVault` |
+| `OAUTH_CLIENTS` | ⬜ | OAuth 客户端注册表（JSON 数组），不配则无法给其它站点授权 |
+| `OAUTH_ISSUER` | ⬜ | 对外 issuer，如 `https://vault.example.com` |
 
 生成一个安全的 `AUTH_SECRET`：
 

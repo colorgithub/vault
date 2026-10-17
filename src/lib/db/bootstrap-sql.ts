@@ -51,4 +51,38 @@ CREATE INDEX IF NOT EXISTS memos_user_updated_idx
 
 CREATE INDEX IF NOT EXISTS totp_user_idx
   ON totp_accounts USING btree (user_id);
+
+-- OAuth 授权码：主键为授权码的 SHA-256 哈希，一次性使用
+CREATE TABLE IF NOT EXISTS oauth_codes (
+  code_hash            text PRIMARY KEY,
+  client_id            text NOT NULL,
+  user_id              uuid NOT NULL,
+  redirect_uri         text NOT NULL,
+  scope                text NOT NULL DEFAULT '',
+  code_challenge       text NOT NULL,
+  code_challenge_method text NOT NULL DEFAULT 'S256',
+  expires_at           timestamptz NOT NULL,
+  consumed_at          timestamptz,
+  created_at           timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT oauth_codes_user_id_users_id_fk FOREIGN KEY (user_id)
+    REFERENCES users(id) ON DELETE CASCADE ON UPDATE NO ACTION
+);
+
+CREATE INDEX IF NOT EXISTS oauth_codes_user_idx
+  ON oauth_codes USING btree (user_id);
+
+-- OAuth 访问令牌：同样只存哈希
+CREATE TABLE IF NOT EXISTS oauth_access_tokens (
+  token_hash  text PRIMARY KEY,
+  client_id   text NOT NULL,
+  user_id     uuid NOT NULL,
+  scope       text NOT NULL DEFAULT '',
+  expires_at  timestamptz NOT NULL,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT oauth_access_tokens_user_id_users_id_fk FOREIGN KEY (user_id)
+    REFERENCES users(id) ON DELETE CASCADE ON UPDATE NO ACTION
+);
+
+CREATE INDEX IF NOT EXISTS oauth_tokens_user_idx
+  ON oauth_access_tokens USING btree (user_id);
 `;

@@ -7,7 +7,14 @@ import { useState } from "react";
 import { IconEye, IconEyeOff } from "@/components/Icons";
 import { apiFetch } from "@/lib/client";
 
-export function AuthForm({ mode }: { mode: "login" | "register" }) {
+export function AuthForm({
+  mode,
+  next = "/vault",
+}: {
+  mode: "login" | "register";
+  /** 登录/注册成功后要回到的站内路径，OAuth 授权流程会带上它 */
+  next?: string;
+}) {
   const router = useRouter();
   const isRegister = mode === "register";
 
@@ -27,7 +34,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         method: "POST",
         json: isRegister ? { name, email, password } : { email, password },
       });
-      router.replace("/vault");
+      router.replace(next);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "操作失败，请稍后重试");
@@ -119,7 +126,9 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       <p className="pt-1 text-center text-xs text-slate-500 dark:text-slate-400">
         {isRegister ? "已有账号？" : "还没有账号？"}
         <Link
-          href={isRegister ? "/login" : "/register"}
+          href={`${isRegister ? "/login" : "/register"}${
+            next && next !== "/vault" ? `?next=${encodeURIComponent(next)}` : ""
+          }`}
           className="ml-1 underline underline-offset-2 transition hover:text-slate-900 dark:hover:text-slate-100"
         >
           {isRegister ? "去登录" : "注册"}
