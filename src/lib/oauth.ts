@@ -126,13 +126,6 @@ export function verifyPkce(
   return safeEqual(expected, challenge);
 }
 
-/** 从环境变量取对外 issuer，未配置时回退到请求自身的 origin。 */
-export function resolveIssuer(request: Request): string {
-  const explicit = process.env.OAUTH_ISSUER?.trim();
-  if (explicit) return explicit.replace(/\/+$/, "");
-  return new URL(request.url).origin;
-}
-
 /** 校验请求的 scope，返回规范化后的字符串；含不支持的 scope 时返回 null。 */
 export function normalizeScope(raw: string | null, client: OAuthClient): string | null {
   const requested = (raw ?? "profile email")

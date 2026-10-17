@@ -84,11 +84,8 @@ OAUTH_CLIENTS='[{
   "clientId": "my-blog",
   "clientSecret": "用下面命令生成",
   "name": "我的博客",
-  "redirectUris": ["https://blog.example.com/api/auth/oauth/callback"]
+  "redirectUris": ["https://blog.colordev.space/api/auth/oauth/callback"]
 }]'
-
-# 对外 issuer，建议显式配置，避免从不同域名访问时不一致
-OAUTH_ISSUER="https://vault.example.com"
 ```
 
 生成 `clientSecret`：
@@ -178,7 +175,6 @@ code_verifier=<PKCE verifier>
 | `DATABASE_URL` | ⬜ | 上一步由 Vercel 自动注入，通常不用管 |
 | `NEXT_PUBLIC_APP_NAME` | ⬜ | 站点名称，默认 `MemoVault` |
 | `OAUTH_CLIENTS` | ⬜ | OAuth 客户端注册表（JSON 数组），不配则无法给其它站点授权 |
-| `OAUTH_ISSUER` | ⬜ | 对外 issuer，如 `https://vault.example.com` |
 
 生成一个安全的 `AUTH_SECRET`：
 
