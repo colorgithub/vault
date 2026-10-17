@@ -81,7 +81,7 @@
 
 ```bash
 OAUTH_CLIENTS='[{
-  "clientId": "my-blog",
+  "clientId": "color",
   "clientSecret": "用下面命令生成",
   "name": "我的博客",
   "redirectUris": ["https://blog.colordev.space/api/auth/oauth/callback"]
