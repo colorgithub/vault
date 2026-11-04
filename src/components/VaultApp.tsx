@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   IconClose,
   IconDownload,
+  IconKey,
   IconLogout,
   IconMemo,
   IconMenu,
@@ -13,6 +14,7 @@ import {
   IconShield,
   IconSun,
 } from "@/components/Icons";
+import { ApiKeyDialog } from "@/components/ApiKeyDialog";
 import { MemoWorkspace } from "@/components/MemoWorkspace";
 import { Toaster, toast } from "@/components/Toast";
 import { TotpWorkspace } from "@/components/TotpWorkspace";
@@ -36,6 +38,7 @@ export function VaultApp({ user }: { user: User }) {
 
   const [tab, setTab] = useState<Tab>("memos");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [apiKeyOpen, setApiKeyOpen] = useState(false);
 
   const [memos, setMemos] = useState<Memo[]>([]);
   const [accounts, setAccounts] = useState<TotpAccount[]>([]);
@@ -237,6 +240,17 @@ export function VaultApp({ user }: { user: User }) {
         </button>
         <button
           type="button"
+          onClick={() => {
+            setApiKeyOpen(true);
+            setSidebarOpen(false);
+          }}
+          className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs text-slate-500 transition hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-slate-100"
+        >
+          <IconKey className="size-4" />
+          API 密钥
+        </button>
+        <button
+          type="button"
           onClick={exportBackup}
           className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs text-slate-500 transition hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-slate-100"
         >
@@ -308,6 +322,8 @@ export function VaultApp({ user }: { user: User }) {
           )}
         </main>
       </div>
+
+      <ApiKeyDialog open={apiKeyOpen} onClose={() => setApiKeyOpen(false)} />
 
       <Toaster />
     </div>
