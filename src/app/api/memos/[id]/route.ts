@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { ApiError, fail, handler, ok, readJson, requireUser, str } from "@/lib/api";
 import { isMemoColor, MAX_MEMO_LENGTH, MAX_TITLE_LENGTH } from "@/lib/constants";
 import { db } from "@/lib/db";
-import { memos } from "@/lib/db/schema";
+import { memoResponseColumns, memos } from "@/lib/db/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,7 @@ type Ctx = { params: Promise<{ id: string }> };
 
 async function loadOwned(userId: string, id: string) {
   const rows = await db
-    .select()
+    .select(memoResponseColumns)
     .from(memos)
     .where(and(eq(memos.id, id), eq(memos.userId, userId)))
     .limit(1);
@@ -66,7 +66,7 @@ export const PATCH = handler<Ctx>(async (req, ctx) => {
     .update(memos)
     .set(patch)
     .where(and(eq(memos.id, id), eq(memos.userId, user.userId)))
-    .returning();
+    .returning(memoResponseColumns);
 
   return ok({ memo: row });
 });

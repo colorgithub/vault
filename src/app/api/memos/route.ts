@@ -10,7 +10,7 @@ import {
   MAX_TITLE_LENGTH,
 } from "@/lib/constants";
 import { db } from "@/lib/db";
-import { memos } from "@/lib/db/schema";
+import { memoResponseColumns, memos } from "@/lib/db/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +52,7 @@ export const GET = handler(async (req: Request) => {
     : eq(memos.userId, user.userId);
 
   const rows = await db
-    .select()
+    .select(memoResponseColumns)
     .from(memos)
     .where(where)
     .orderBy(desc(memos.pinned), desc(memos.updatedAt))
@@ -99,7 +99,7 @@ export const POST = handler(async (req: Request) => {
       createdAt: now,
       updatedAt: now,
     })
-    .returning();
+    .returning(memoResponseColumns);
 
   return ok({ memo: row }, 201);
 });

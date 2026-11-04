@@ -323,6 +323,48 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5432/memovault"
 
 `limit` 上限 500，默认 300。`POST` 与 `PATCH` 都不允许把标题和内容同时清空。
 
+### 分享密钥 `/api/memos/:id/key`
+
+给单条备忘录生成一把**只读**密钥，之后不需要登录就能用 `GET /api/share/:key` 读取它的标题与正文。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/memos/:id/key` | 创建 / 轮换密钥。**明文只在此响应里出现一次** |
+| `GET` | `/api/memos/:id/key` | 查询是否已开启分享（不回显密钥） |
+| `DELETE` | `/api/memos/:id/key` | 撤销分享，旧链接立即失效 |
+
+创建响应：
+
+```json
+{
+  "key": "mv_3fK9...",
+  "url": "https://your-app.vercel.app/api/share/mv_3fK9...",
+  "createdAt": "2026-11-04T03:10:00.000Z"
+}
+```
+
+`GET` 响应：`{ "enabled": true, "createdAt": "..." }`。密钥明文不入库，丢了只能重新生成。
+
+### 公开读取 `/api/share/:key`
+
+不需要登录、不读 Cookie，密钥本身就是凭据：
+
+```bash
+curl https://your-app.vercel.app/api/share/mv_3fK9...                  # JSON
+curl https://your-app.vercel.app/api/share/mv_3fK9...?format=text      # 纯文本正文
+```
+
+```json
+{ "memo": { "id": "...", "title": "...", "content": "...", "color": "slate",
+            "pinned": false, "updatedAt": "2026-11-04T03:10:00.000Z" } }
+```
+
+- 每条备忘录最多一把密钥，再次 `POST` 即轮换，旧链接当场失效
+- 库里只存密钥的 SHA-256 哈希，任何接口都不会回显它
+- 内容**实时读库**，不是快照；编辑后分享出去的页面立刻是新内容
+- 响应带 `Cache-Control: no-store` 与 `X-Robots-Tag: noindex`，撤销即时生效、不進搜索引擎
+- 密钥格式非法与已撤销都返回同样的 `404`，不给枚举探测留空间
+
 ### 2FA `/api/totp`
 
 | 方法 | 路径 | 说明 |
@@ -366,6 +408,8 @@ src/
 │       ├── health/route.ts     # 部署自检
 │       ├── auth/{register,login,logout,me}/route.ts
 │       ├── memos/route.ts  memos/[id]/route.ts
+│       ├── memos/[id]/key/route.ts   # 分享密钥：创建 / 查询 / 撤销
+│       ├── share/[key]/route.ts      # 公开读取（凭密钥，无需登录）
 │       └── totp/route.ts   totp/[id]/route.ts
 ├── components/
 │   ├── VaultApp.tsx            # 主壳：侧栏 + 路由切换 + 数据加载
@@ -382,6 +426,7 @@ src/
 └── lib/
     ├── auth.ts                 # PBKDF2 哈希 + JWT 会话
     ├── totp.ts                 # TOTP / Base32 / otpauth URI / 迁移码解析
+    ├── share-key.ts            # 备忘录分享密钥：生成 / 校验 / 哈希
     ├── api.ts                  # 路由包装、统一错误处理、请求体校验
     ├── client.ts               # fetch 封装、hooks、能力探测、工具函数
     ├── polyfills.ts            # 旧 WebView 运行时 polyfill（ES5）
@@ -473,6 +518,7 @@ node -e "const fs=require('fs');const d='.next/static/css';const f=fs.readdirSyn
 - Markdown 预览经 DOMPurify 消毒
 - 响应头附带 `X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff` 等
 - **完全不请求摄像头权限**：响应头里 `camera=()` 直接禁用，代码中也没有任何 `getUserMedia` 调用；屏幕捕获用 `display-capture=(self)` 限定同源
+- 备忘录分享密钥为 256 位随机串（`mv_` 前缀），库里只存 SHA-256 哈希，撤销后旧链接立即失效
 
 > ⚠️ **TOTP 密钥以可逆形式存储**：因为需要在浏览器本地实时计算验证码，服务端必须能把密钥下发给已登录的用户。这是所有自建验证器的共同取舍 —— 请务必使用可信的数据库服务商，并保管好 `DATABASE_URL`。
 
