@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>MemoVaultNote</RootNamespace>
+    <AssemblyName>MemoVaultNote</AssemblyName>
+    <Version>1.0.0</Version>
+    <Authors>colorgithub</Authors>
+    <Product>MemoVault 便签</Product>
+    <Description>MemoVault 的 Windows 桌面便签：定时拉取备忘录，只读展示。</Description>
+    <ApplicationIcon />
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 用 DPAPI 加密保存 API 密钥，避免明文落在 %APPDATA% -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+  </ItemGroup>
+
+</Project>

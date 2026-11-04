@@ -396,6 +396,20 @@ curl -H "Authorization: Bearer mv_3fK9..." \
 
 ---
 
+## 🖥 Windows 桌面便签
+
+`desktop/` 是一个独立的 WPF 客户端：把备忘录变成桌面上一张半透明的小卡片，按设定分钟数轮询
+`/api/memos`（账号 API 密钥、只读），支持置顶、拖动、多备忘录切换、透明度与开机自启。
+
+```powershell
+cd desktop
+dotnet publish -c Release -r win-x64 --self-contained false -o dist
+```
+
+详见 [desktop/README.md](desktop/README.md)。
+
+---
+
 ## 🗂 项目结构
 
 ```
@@ -403,6 +417,7 @@ postcss.config.mjs              # PostCSS 降级链（低版本 WebView 适配�
 postcss-android-webview.cjs     # 自定义插件：:where/:is、dvh、translate、flex gap
 next.config.ts                  # 安全响应头
 drizzle.config.ts               # Drizzle Kit 配置
+desktop/                        # Windows 便签客户端（WPF + .NET 8，独立项目）
 src/
 ├── app/
 │   ├── layout.tsx              # 根布局 + polyfill / 主题脚本（防闪白）
