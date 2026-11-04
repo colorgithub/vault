@@ -1,9 +1,9 @@
 import { and, eq } from "drizzle-orm";
 
-import { ApiError, fail, handler, ok, readJson, requireUser, str } from "@/lib/api";
+import { ApiError, fail, handler, ok, readJson, requireReader, requireUser, str } from "@/lib/api";
 import { isMemoColor, MAX_MEMO_LENGTH, MAX_TITLE_LENGTH } from "@/lib/constants";
 import { db } from "@/lib/db";
-import { memoResponseColumns, memos } from "@/lib/db/schema";
+import { memos } from "@/lib/db/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -11,15 +11,16 @@ type Ctx = { params: Promise<{ id: string }> };
 
 async function loadOwned(userId: string, id: string) {
   const rows = await db
-    .select(memoResponseColumns)
+    .select()
     .from(memos)
     .where(and(eq(memos.id, id), eq(memos.userId, userId)))
     .limit(1);
   return rows[0] ?? null;
 }
 
-export const GET = handler<Ctx>(async (_req, ctx) => {
-  const user = await requireUser();
+export const GET = handler<Ctx>(async (req, ctx) => {
+  // 读接口：登录会话或账号 API 密钥都可以
+  const user = await requireReader(req);
   const { id } = await ctx.params;
   const memo = await loadOwned(user.userId, id);
   if (!memo) return fail("备忘录不存在", 404);
@@ -66,7 +67,7 @@ export const PATCH = handler<Ctx>(async (req, ctx) => {
     .update(memos)
     .set(patch)
     .where(and(eq(memos.id, id), eq(memos.userId, user.userId)))
-    .returning(memoResponseColumns);
+    .returning();
 
   return ok({ memo: row });
 });

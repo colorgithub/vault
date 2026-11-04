@@ -1,7 +1,7 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
-import { ApiError, handler, ok, readJson, requireUser, str } from "@/lib/api";
+import { ApiError, handler, ok, readJson, requireReader, requireUser, str } from "@/lib/api";
 import {
   DEFAULT_MEMO_LIMIT,
   isMemoColor,
@@ -10,7 +10,7 @@ import {
   MAX_TITLE_LENGTH,
 } from "@/lib/constants";
 import { db } from "@/lib/db";
-import { memoResponseColumns, memos } from "@/lib/db/schema";
+import { memos } from "@/lib/db/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +38,8 @@ function escapeLike(input: string): string {
  * 超出的备忘录在界面上完全不可达 —— 连「导出备份」也会一并漏掉。
  */
 export const GET = handler(async (req: Request) => {
-  const user = await requireUser();
+  // 读接口：登录会话或账号 API 密钥都可以
+  const user = await requireReader(req);
   const url = new URL(req.url);
   const q = (url.searchParams.get("q") ?? "").trim();
   const limit = parseLimit(url.searchParams.get("limit"));
@@ -52,7 +53,7 @@ export const GET = handler(async (req: Request) => {
     : eq(memos.userId, user.userId);
 
   const rows = await db
-    .select(memoResponseColumns)
+    .select()
     .from(memos)
     .where(where)
     .orderBy(desc(memos.pinned), desc(memos.updatedAt))
@@ -99,7 +100,7 @@ export const POST = handler(async (req: Request) => {
       createdAt: now,
       updatedAt: now,
     })
-    .returning(memoResponseColumns);
+    .returning();
 
   return ok({ memo: row }, 201);
 });

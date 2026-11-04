@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { getSession, type SessionPayload } from "@/lib/auth";
+import { findUserByApiKey, normalizeApiKey, readBearerToken } from "@/lib/api-key";
 import { diagnoseEnv, ensureSchema } from "@/lib/db";
 
 export class ApiError extends Error {
@@ -78,6 +79,37 @@ export function handler<Ctx>(
 export async function requireUser(): Promise<SessionPayload> {
   const session = await getSession();
   if (!session) throw new ApiError("未登录或登录已过期", 401);
+  return session;
+}
+
+/**
+ * 解析只读身份：优先登录会话，其次 `Authorization: Bearer <账号 API 密钥>`。
+ *
+ * 只给读接口用。写接口（新建 / 修改 / 删除）以及密钥管理仍然只认 Cookie 会话 ——
+ * 一把泄露的密钥不该能反过来改数据或给自己续期。
+ */
+export async function getReader(req: Request): Promise<SessionPayload | null> {
+  const session = await getSession();
+  if (session) return session;
+
+  const token = readBearerToken(req);
+  if (!token) return null;
+
+  const key = normalizeApiKey(token);
+  if (!key) return null;
+
+  const user = await findUserByApiKey(key);
+  if (!user) return null;
+
+  return { userId: user.id, email: user.email, name: user.name };
+}
+
+/** 同 getReader，但未认证时抛 401。 */
+export async function requireReader(req: Request): Promise<SessionPayload> {
+  const session = await getReader(req);
+  if (!session) {
+    throw new ApiError("未登录，或 API 密钥无效 / 已被撤销", 401);
+  }
   return session;
 }
 

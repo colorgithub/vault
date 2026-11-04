@@ -17,6 +17,13 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+  /**
+   * 账号级 API 密钥的 SHA-256 哈希（见 src/lib/api-key.ts）。
+   * 不存明文：明文只在创建 / 轮换时返回一次，之后只能重新生成。
+   * NULL 表示该账号未开启 API 访问。
+   */
+  apiKeyHash: text("api_key_hash").unique(),
+  apiKeyCreatedAt: timestamp("api_key_created_at", { withTimezone: true }),
 });
 
 /** 备忘录表 */
@@ -37,34 +44,9 @@ export const memos = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
-    /**
-     * 分享密钥的 SHA-256 哈希（见 src/lib/share-key.ts）。
-     * 不存明文：明文只在创建 / 轮换时返回一次，之后无法再取回，只能重新生成。
-     * NULL 表示该备忘录未开启分享。
-     */
-    shareKeyHash: text("share_key_hash").unique(),
-    shareKeyCreatedAt: timestamp("share_key_created_at", { withTimezone: true }),
   },
   (t) => [index("memos_user_updated_idx").on(t.userId, t.updatedAt)],
 );
-
-/**
- * 对外返回的 memo 列。
- *
- * 刻意不包含 share_key_hash：分享密钥的哈希虽然不可反推，但它属于凭据材料，
- * 没有任何理由出现在普通接口的响应里。所有返回 memo 的接口都走这个列集合，
- * 避免以后新增字段时又从 `select()` 里漏出去。
- */
-export const memoResponseColumns = {
-  id: memos.id,
-  userId: memos.userId,
-  title: memos.title,
-  content: memos.content,
-  color: memos.color,
-  pinned: memos.pinned,
-  createdAt: memos.createdAt,
-  updatedAt: memos.updatedAt,
-};
 
 /** 2FA / TOTP 账户表 */
 export const totpAccounts = pgTable(

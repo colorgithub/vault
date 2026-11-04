@@ -14,7 +14,10 @@ CREATE TABLE IF NOT EXISTS users (
   name          text NOT NULL,
   password_hash text NOT NULL,
   created_at    timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT users_email_unique UNIQUE (email)
+  api_key_hash       text,
+  api_key_created_at timestamptz,
+  CONSTRAINT users_email_unique UNIQUE (email),
+  CONSTRAINT users_api_key_hash_unique UNIQUE (api_key_hash)
 );
 
 CREATE TABLE IF NOT EXISTS memos (
@@ -26,11 +29,8 @@ CREATE TABLE IF NOT EXISTS memos (
   pinned     boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  share_key_hash       text,
-  share_key_created_at timestamptz,
   CONSTRAINT memos_user_id_users_id_fk FOREIGN KEY (user_id)
-    REFERENCES users(id) ON DELETE CASCADE ON UPDATE NO ACTION,
-  CONSTRAINT memos_share_key_hash_unique UNIQUE (share_key_hash)
+    REFERENCES users(id) ON DELETE CASCADE ON UPDATE NO ACTION
 );
 
 CREATE TABLE IF NOT EXISTS totp_accounts (
@@ -56,27 +56,32 @@ CREATE INDEX IF NOT EXISTS totp_user_idx
   ON totp_accounts USING btree (user_id);
 
 -- ---------------------------------------------------------------------------
--- 分享密钥列（后加的字段）
+-- 账号级 API 密钥列（后加的字段）
 --
 -- CREATE TABLE IF NOT EXISTS 对已存在的表不会补列，所以升级部署必须显式 ADD COLUMN。
 -- 这里用 IF NOT EXISTS 保证重复执行幂等；唯一约束没有 IF NOT EXISTS 语法，
 -- 用 DO 块查 pg_constraint 再决定是否添加。
 -- ---------------------------------------------------------------------------
-ALTER TABLE memos ADD COLUMN IF NOT EXISTS share_key_hash text;
-ALTER TABLE memos ADD COLUMN IF NOT EXISTS share_key_created_at timestamptz;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS api_key_hash text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS api_key_created_at timestamptz;
 
 DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1
     FROM pg_constraint
-    WHERE conname = 'memos_share_key_hash_unique'
-      AND conrelid = 'memos'::regclass
+    WHERE conname = 'users_api_key_hash_unique'
+      AND conrelid = 'users'::regclass
   ) THEN
-    ALTER TABLE memos
-      ADD CONSTRAINT memos_share_key_hash_unique UNIQUE (share_key_hash);
+    ALTER TABLE users
+      ADD CONSTRAINT users_api_key_hash_unique UNIQUE (api_key_hash);
   END IF;
 END $$;
+
+-- 早期版本曾把密钥挂在每条备忘录上（share_key_hash），已改为账号级，
+-- 这里清掉遗留列。DROP COLUMN 会一并带走其上的唯一约束。
+ALTER TABLE memos DROP COLUMN IF EXISTS share_key_created_at;
+ALTER TABLE memos DROP COLUMN IF EXISTS share_key_hash;
 
 -- OAuth 授权码：主键为授权码的 SHA-256 哈希，一次性使用
 CREATE TABLE IF NOT EXISTS oauth_codes (
