@@ -14,6 +14,7 @@ public partial class MainWindow : Window
 
     private readonly AppConfig _config = AppConfig.Load();
     private readonly ApiClient _api = new();
+    private readonly RealtimeClient _realtime = new();
     private readonly DispatcherTimer _timer = new();
     private readonly CancellationTokenSource _lifetime = new();
 
@@ -27,8 +28,32 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         _timer.Tick += async (_, _) => await RefreshAsync();
+        _realtime.Changed += OnRealtimeChanged;
+        _realtime.ConnectionChanged += OnRealtimeConnectionChanged;
+
         Loaded += OnLoaded;
         Closed += OnClosed;
+    }
+
+    private void OnRealtimeChanged()
+    {
+        // 推送只说明「变了」，具体内容还是走一次正常的列表请求
+        Dispatcher.Invoke(() => _ = RefreshAsync());
+    }
+
+    private void OnRealtimeConnectionChanged(bool connected)
+    {
+        Dispatcher.Invoke(() => UpdateLiveBadge(connected));
+    }
+
+    private void UpdateLiveBadge(bool connected)
+    {
+        LiveText.Text = connected ? "实时" : "轮询";
+        LiveText.Foreground = Freeze(new SolidColorBrush(
+            connected ? Color.FromRgb(0x6E, 0xE7, 0xB7) : Color.FromRgb(0x6B, 0x73, 0x85)));
+        LiveText.ToolTip = connected
+            ? "已通过 WebSocket 连接，改动会立即同步"
+            : "WebSocket 不可用（例如部署在 Vercel），按设定间隔轮询";
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
@@ -36,12 +61,20 @@ public partial class MainWindow : Window
         RestorePosition();
         ApplyConfig();
         RestartTimer();
+        StartRealtime();
         await RefreshAsync();
+    }
+
+    private void StartRealtime()
+    {
+        UpdateLiveBadge(false);
+        _realtime.Start(_config.BaseUrl, _config.ApiKey);
     }
 
     private void OnClosed(object? sender, EventArgs e)
     {
         _lifetime.Cancel();
+        _realtime.Dispose();
         _config.Left = Left;
         _config.Top = Top;
         _config.Save();
@@ -218,6 +251,7 @@ public partial class MainWindow : Window
         AutoStart.Apply(_config.AutoStart);
         ApplyConfig();
         RestartTimer();
+        StartRealtime();
 
         _memos.Clear();
         _index = 0;

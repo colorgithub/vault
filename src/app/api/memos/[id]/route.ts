@@ -4,6 +4,7 @@ import { ApiError, fail, handler, ok, readJson, requireReader, requireUser, str 
 import { isMemoColor, MAX_MEMO_LENGTH, MAX_TITLE_LENGTH } from "@/lib/constants";
 import { db } from "@/lib/db";
 import { memos } from "@/lib/db/schema";
+import { notifyMemosChanged } from "@/lib/realtime";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +70,8 @@ export const PATCH = handler<Ctx>(async (req, ctx) => {
     .where(and(eq(memos.id, id), eq(memos.userId, user.userId)))
     .returning();
 
+  notifyMemosChanged(user.userId);
+
   return ok({ memo: row });
 });
 
@@ -80,5 +83,8 @@ export const DELETE = handler<Ctx>(async (_req, ctx) => {
     .where(and(eq(memos.id, id), eq(memos.userId, user.userId)))
     .returning({ id: memos.id });
   if (deleted.length === 0) return fail("备忘录不存在", 404);
+
+  notifyMemosChanged(user.userId);
+
   return ok({ success: true });
 });

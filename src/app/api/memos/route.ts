@@ -11,6 +11,7 @@ import {
 } from "@/lib/constants";
 import { db } from "@/lib/db";
 import { memos } from "@/lib/db/schema";
+import { notifyMemosChanged } from "@/lib/realtime";
 
 export const dynamic = "force-dynamic";
 
@@ -101,6 +102,9 @@ export const POST = handler(async (req: Request) => {
       updatedAt: now,
     })
     .returning();
+
+  // 通知同一账号的实时连接（自托管时生效；Vercel 上 no-op）
+  notifyMemosChanged(user.userId);
 
   return ok({ memo: row }, 201);
 });

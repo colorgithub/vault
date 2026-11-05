@@ -36,6 +36,8 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 ## 功能
 
 - 无边框半透明卡片，圆角、阴影，可拖动到任意位置（位置会记住）
+- **实时同步**：服务器支持 WebSocket 时改动秒级到达；连不上就自动退回轮询，
+  底部会显示当前是「实时」还是「轮询」
 - 窗口置顶（默认开，右键菜单可切）
 - 右上角：立即刷新 / 设置 / 关闭
 - 底部：颜色标签、最后同步时间、`1/n` 切换多条备忘录
@@ -54,6 +56,9 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 ## 实现说明
 
 - .NET 8 + WPF，无第三方 UI 库；唯一依赖是 `System.Security.Cryptography.ProtectedData`
-- 轮询用 `DispatcherTimer`，间隔改完立即生效，不用重启
+- **实时优先**：启动就连 `ws(s)://<服务器>/api/ws`（`Authorization: Bearer <key>`），
+  收到 `memos.changed` 就重新拉一次列表；断线按 1s→2s→5s→10s→30s 退避重连
+- **轮询兜底**：`DispatcherTimer` 始终按设定间隔跑，WS 不可用（例如 Vercel 部署）时
+  完全靠它，间隔改完立即生效，不用重启
 - HTTP 只调 `GET /api/memos?limit=100`，带 `Authorization: Bearer <key>`
 - 断网 / 服务端报错时保留上一次内容，只在卡片底部显示一行错误，不会清空

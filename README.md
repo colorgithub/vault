@@ -277,12 +277,36 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5432/memovault"
 
 | 命令 | 说明 |
 | --- | --- |
-| `npm run dev` | 启动开发服务器 |
+| `npm run dev` | 开发服务器（自定义服务器，带 WebSocket） |
 | `npm run build` | 生产构建 |
-| `npm run start` | 启动生产服务器 |
+| `npm run start` | 生产服务器（自定义服务器，带 WebSocket） |
+| `npm run start:next` | 只跑 Next 自带服务器（没有 WebSocket，退回轮询） |
 | `npm run typecheck` | TypeScript 类型检查 |
 | `npm run db:push` | 用 Drizzle Kit 同步表结构（可选） |
 | `npm run db:generate` | 生成迁移 SQL（可选） |
+
+---
+
+## ⚡ 实时推送（WebSocket）
+
+`npm run dev` / `npm run start` 跑的不是 `next start`，而是根目录的 [server.mjs](server.mjs)：
+它在同一个进程里挂了一个 WebSocket 服务，地址 `/api/ws`。备忘录被新建、修改或删除后，
+服务端会立刻推一条 `{"type":"memos.changed"}` 给同一账号的所有连接。
+
+```text
+wss://你的域名/api/ws
+Authorization: Bearer mv_xxx        # 桌面客户端用这个
+wss://你的域名/api/ws?key=mv_xxx    # 浏览器 WebSocket 不能自定义头，用这个
+```
+
+- 连上先收到 `{"type":"ready"}`，之后每次变更收到 `memos.changed`
+- 鉴权复用 `/api/whoami`，服务端不重复实现一套密钥校验；无效密钥直接 401 拒绝升级
+- 30 秒心跳，半开连接会被清理；断线由客户端自己退避重连
+- 只推「变了」这个事实，不推内容 —— 客户端收到后重新拉一次列表，状态始终以数据库为准
+
+> ⚠️ **Vercel 上跑不了 WebSocket**：Serverless 不支持长连接，`server.mjs` 也不会被使用。
+> 这不影响功能 —— 客户端连不上 `/api/ws` 会自动退回轮询（桌面上显示「轮询」而不是「实时」）。
+> 想要实时就自托管（VPS / Docker / `npm start`），或者把推送换成外部服务。
 
 ---
 
@@ -304,6 +328,7 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5432/memovault"
 | `POST` | `/api/auth/login` | 登录，body：`{ email, password }` |
 | `POST` | `/api/auth/logout` | 登出 |
 | `GET` | `/api/auth/me` | 当前用户，未登录返回 `{ user: null }` |
+| `GET` | `/api/whoami` | 会话 Cookie 或账号 API 密钥都能换到 `{ user }`；密钥无效返回 401 |
 
 ### 备忘录 `/api/memos`
 
@@ -417,6 +442,7 @@ postcss.config.mjs              # PostCSS 降级链（低版本 WebView 适配�
 postcss-android-webview.cjs     # 自定义插件：:where/:is、dvh、translate、flex gap
 next.config.ts                  # 安全响应头
 drizzle.config.ts               # Drizzle Kit 配置
+server.mjs                      # 自定义服务器：Next + WebSocket（自托管实时推送）
 desktop/                        # Windows 便签客户端（WPF + .NET 8，独立项目）
 src/
 ├── app/
@@ -447,6 +473,7 @@ src/
     ├── auth.ts                 # PBKDF2 哈希 + JWT 会话
     ├── totp.ts                 # TOTP / Base32 / otpauth URI / 迁移码解析
     ├── api-key.ts              # 账号 API 密钥：生成 / 校验 / 哈希 / 查用户
+    ├── realtime.ts             # 写操作后的实时广播口（无 WS 时静默跳过）
     ├── api.ts                  # 路由包装、统一错误处理、请求体校验
     ├── client.ts               # fetch 封装、hooks、能力探测、工具函数
     ├── polyfills.ts            # 旧 WebView 运行时 polyfill（ES5）

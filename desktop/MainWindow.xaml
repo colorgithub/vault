@@ -136,6 +136,12 @@
                             <TextBlock Text="便签" FontSize="11" Foreground="#AEB6C6" />
                         </StackPanel>
                     </Border>
+                    <TextBlock x:Name="LiveText"
+                               Text="轮询"
+                               FontSize="10"
+                               Foreground="#6B7385"
+                               VerticalAlignment="Center"
+                               Margin="8,0,0,0" />
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
