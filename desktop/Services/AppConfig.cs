@@ -20,6 +20,12 @@ public sealed class AppConfig
     /// <summary>多少分钟拉一次。1–1440。</summary>
     public int RefreshMinutes { get; set; } = 10;
 
+    /// <summary>同时显示几张便签。1–10。</summary>
+    public int VisibleCount { get; set; } = 3;
+
+    /// <summary>每条备忘录对应窗口的位置（按备忘录 id 记住）。</summary>
+    public Dictionary<string, NotePosition> Positions { get; set; } = new();
+
     public bool Topmost { get; set; } = true;
 
     public bool AutoStart { get; set; }
@@ -64,6 +70,8 @@ public sealed class AppConfig
     public AppConfig Clone()
     {
         var clone = (AppConfig)MemberwiseClone();
+        // 字典是引用类型，必须复制，否则设置面板会改到正在使用的对象
+        clone.Positions = new Dictionary<string, NotePosition>(Positions);
         return clone;
     }
 
@@ -74,6 +82,7 @@ public sealed class AppConfig
             : BaseUrl.Trim();
 
         RefreshMinutes = Math.Clamp(RefreshMinutes, 1, 1440);
+        VisibleCount = Math.Clamp(VisibleCount, 1, 10);
         CardOpacity = Math.Clamp(CardOpacity, 0.5, 1.0);
     }
 

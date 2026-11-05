@@ -17,6 +17,7 @@ public partial class SettingsWindow : Window
         UrlBox.Text = config.BaseUrl;
         KeyBox.Text = config.ApiKey;
         IntervalBox.Text = config.RefreshMinutes.ToString();
+        CountBox.Text = config.VisibleCount.ToString();
         TopmostBox.IsChecked = config.Topmost;
         AutoStartBox.IsChecked = config.AutoStart;
         OpacitySlider.Value = config.CardOpacity;
@@ -50,11 +51,18 @@ public partial class SettingsWindow : Window
             return null;
         }
 
+        if (!int.TryParse(CountBox.Text.Trim(), out var count) || count < 1 || count > 10)
+        {
+            error = "同时显示需要是 1 – 10 之间的整数。";
+            return null;
+        }
+
         return new AppConfig
         {
             BaseUrl = url,
             ApiKey = key,
             RefreshMinutes = minutes,
+            VisibleCount = count,
             Topmost = TopmostBox.IsChecked == true,
             AutoStart = AutoStartBox.IsChecked == true,
             CardOpacity = Math.Round(OpacitySlider.Value, 2),

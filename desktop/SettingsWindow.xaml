@@ -140,6 +140,13 @@
                 <TextBlock Text="（1 – 1440）" Foreground="#6B7385" FontSize="10.5" VerticalAlignment="Center" Margin="8,0,0,0" />
             </StackPanel>
 
+            <TextBlock Text="同时显示" Style="{StaticResource Label}" />
+            <StackPanel Orientation="Horizontal">
+                <TextBox x:Name="CountBox" Style="{StaticResource Input}" Width="72" />
+                <TextBlock Text="张便签" Foreground="#AEB6C6" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0" />
+                <TextBlock Text="（1 – 10，按置顶与更新时间取前几条）" Foreground="#6B7385" FontSize="10.5" VerticalAlignment="Center" Margin="8,0,0,0" />
+            </StackPanel>
+
             <StackPanel Margin="0,16,0,0">
                 <CheckBox x:Name="TopmostBox" Content="窗口置顶" Foreground="#C7CDD9" FontSize="12" />
                 <CheckBox x:Name="AutoStartBox" Content="开机自动启动" Foreground="#C7CDD9" FontSize="12" Margin="0,8,0,0" />

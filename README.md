@@ -423,8 +423,9 @@ curl -H "Authorization: Bearer mv_3fK9..." \
 
 ## 🖥 Windows 桌面便签
 
-`desktop/` 是一个独立的 WPF 客户端：把备忘录变成桌面上一张半透明的小卡片，按设定分钟数轮询
-`/api/memos`（账号 API 密钥、只读），支持置顶、拖动、多备忘录切换、透明度与开机自启。
+`desktop/` 是一个独立的 WPF 客户端：把备忘录变成桌面上的一组半透明小卡片（每条一个窗口，
+各自拖动、各自记位置，条数可调），按设定分钟数轮询或凭 WebSocket 实时刷新
+`/api/memos`（账号 API 密钥、只读），支持置顶、隐藏/显示、透明度与开机自启。
 
 ```powershell
 cd desktop
